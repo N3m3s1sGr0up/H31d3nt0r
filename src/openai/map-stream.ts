@@ -122,7 +122,7 @@ export function sseStreamTerminalErrorEnvelope(payload: BridgeStreamErrorPayload
  * the same final string as a non-streaming response.
  *
  * Non-text content blocks (`tool_use`) from the Cursor SDK are still ignored;
- * v1.1 OpenAI tool_calls come from parsing assistant text (`HERMES_BRIDGE_TOOL_JSON`).
+ * v1.1 OpenAI tool_calls come from parsing assistant text (`OPENAI_COMPAT_TOOL_JSON`).
  */
 export interface AssistantTextTracker {
   consume(msg: SDKMessage): string | undefined;

@@ -21,7 +21,6 @@ function baseFixture(overrides: Partial<Config> = {}): Config {
     host: "127.0.0.1",
     port: 8787,
     workspaceCwd: "/tmp/repo",
-    hermesHomeDir: "/tmp/.hermes",
     localSettingSources: ["project", "user"] as const,
     maxAgents: 4,
     bridgeGeneration: 1,

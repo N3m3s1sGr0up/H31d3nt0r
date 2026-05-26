@@ -14,7 +14,7 @@ const KEYS_TO_RESET = [
   "MAX_AGENTS",
   "CURSOR_LOCAL_SETTING_SOURCES",
   "CURSOR_AGENT_MCP_SERVERS",
-  "HERMES_HOME",
+  "BRIDGE_EXTRA_CWD",
   "WORKSPACE_CWD_ONLY",
   "BRIDGE_CHAT_UPSTREAM_MODE",
   "BRIDGE_CHAT_UPSTREAM_URL",
@@ -33,7 +33,7 @@ describe("loadConfig", () => {
       savedEnv[key] = process.env[key];
       delete process.env[key];
     }
-    tmp = mkdtempSync(path.join(tmpdir(), "hermes-cfg-"));
+    tmp = mkdtempSync(path.join(tmpdir(), "bridge-cfg-"));
   });
 
   afterEach(() => {
@@ -67,10 +67,26 @@ describe("loadConfig", () => {
     expect(cfg.maxAgents).toBe(4);
     expect(typeof cfg.bridgeGeneration).toBe("number");
     expect(cfg.bridgeGeneration).toBeGreaterThan(0);
-    expect(cfg.workspaceCwd).toEqual([SERVICE_ROOT, cfg.hermesHomeDir]);
+    expect(cfg.workspaceCwd).toEqual(SERVICE_ROOT);
     expect(cfg.localSettingSources).toEqual(["project", "user"]);
-    expect(cfg.hermesHomeDir).toContain(".hermes");
     expect(cfg.chatUpstream.mode).toBe("off");
+  });
+
+  it("merges BRIDGE_EXTRA_CWD as a second workspace root", () => {
+    process.env.CURSOR_API_KEY = "cursor-secret";
+    process.env.BRIDGE_API_KEY = "bridge-secret";
+    process.env.BRIDGE_EXTRA_CWD = "/tmp/extra-ws";
+    const cfg = loadConfig({ dotEnvPath: path.join(tmp, "noop") });
+    expect(cfg.workspaceCwd).toEqual([SERVICE_ROOT, "/tmp/extra-ws"]);
+  });
+
+  it("ignores BRIDGE_EXTRA_CWD when WORKSPACE_CWD_ONLY=1", () => {
+    process.env.CURSOR_API_KEY = "cursor-secret";
+    process.env.BRIDGE_API_KEY = "bridge-secret";
+    process.env.BRIDGE_EXTRA_CWD = "/tmp/extra-ws";
+    process.env.WORKSPACE_CWD_ONLY = "1";
+    const cfg = loadConfig({ dotEnvPath: path.join(tmp, "noop") });
+    expect(cfg.workspaceCwd).toEqual(SERVICE_ROOT);
   });
 
   it("rejects an invalid PORT", () => {

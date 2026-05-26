@@ -20,8 +20,7 @@ function fixtureConfig() {
     bridgeApiKey: "bridge-secret",
     host: "127.0.0.1",
     port: 8787,
-    workspaceCwd: "/tmp/hermes-test-workspace",
-    hermesHomeDir: "/tmp/.hermes",
+    workspaceCwd: "/tmp/bridge-test-workspace",
     localSettingSources: ["project", "user"] as const,
     maxAgents: 4,
     bridgeGeneration: 1_700_000_000_000,
@@ -623,7 +622,7 @@ describe("POST /v1/chat/completions (stream)", () => {
     );
   });
 
-  it("returns OpenAI tool_calls when the model emits HERMES_BRIDGE_TOOL_JSON", async () => {
+  it("returns OpenAI tool_calls when the model emits OPENAI_COMPAT_TOOL_JSON", async () => {
     const payload = {
       tool_calls: [
         {
@@ -636,7 +635,7 @@ describe("POST /v1/chat/completions (stream)", () => {
     const chatComplete = vi.fn(async () => ({
       id: "run-1",
       status: "finished" as const,
-      result: `Done.\nHERMES_BRIDGE_TOOL_JSON ${JSON.stringify(payload)}`,
+      result: `Done.\nOPENAI_COMPAT_TOOL_JSON ${JSON.stringify(payload)}`,
     }));
 
     const { hono } = buildApp({

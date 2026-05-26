@@ -14,8 +14,7 @@ function fixtureConfig(): Config {
     bridgeApiKey: "bridge-secret",
     host: "127.0.0.1",
     port: 8787,
-    workspaceCwd: "/tmp/hermes-test-workspace",
-    hermesHomeDir: "/tmp/.hermes",
+    workspaceCwd: "/tmp/bridge-test-workspace",
     localSettingSources: ["project", "user"] as const,
     maxAgents: 4,
     bridgeGeneration: 1,
@@ -34,7 +33,7 @@ describe("deriveRequestId", () => {
   });
 
   it("allows safe literals up to 128 chars", () => {
-    expect(deriveRequestId("Hermes-thread-007")).toBe("Hermes-thread-007");
+    expect(deriveRequestId("trace-thread-007")).toBe("trace-thread-007");
     const pad = `a.${"b".repeat(120)}:c`; // ≤128 incl dots/colon
     expect(deriveRequestId(pad)).toBe(pad);
   });
@@ -51,8 +50,7 @@ describe("X-Request-Id middleware", () => {
       config: fixtureConfig(),
       cursorClient: new CursorClient({
         cursorApiKey: "cursor-secret",
-        workspaceCwd: "/tmp/hermes-test-workspace",
-        hermesHomeDir: "/tmp/.hermes",
+        workspaceCwd: "/tmp/bridge-test-workspace",
       }),
     });
     const res = await hono.request("http://localhost/health", {
@@ -66,8 +64,7 @@ describe("X-Request-Id middleware", () => {
       config: fixtureConfig(),
       cursorClient: new CursorClient({
         cursorApiKey: "cursor-secret",
-        workspaceCwd: "/tmp/hermes-test-workspace",
-        hermesHomeDir: "/tmp/.hermes",
+        workspaceCwd: "/tmp/bridge-test-workspace",
       }),
     });
     const res = await hono.request("http://localhost/health", {
@@ -83,8 +80,7 @@ describe("X-Request-Id middleware", () => {
       config: fixtureConfig(),
       cursorClient: new CursorClient({
         cursorApiKey: "cursor-secret",
-        workspaceCwd: "/tmp/hermes-test-workspace",
-        hermesHomeDir: "/tmp/.hermes",
+        workspaceCwd: "/tmp/bridge-test-workspace",
       }),
     });
     const res = await hono.request("http://localhost/does-not-exist", {

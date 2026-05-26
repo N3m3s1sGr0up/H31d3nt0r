@@ -1,10 +1,9 @@
 [Unit]
-Description=hermes-cursor-api — Loopback HTTP bridge for @cursor/sdk (Hermes provider: custom)
+Description=H31d3nt0r — Loopback OpenAI-compatible gateway (@cursor/sdk)
 # Before enable: replace every __INSTALL_ROOT__ with the absolute clone path (no trailing slash).
-# Replace __SERVICE_USER__ with the Unix account that runs Cursor SDK (User, Group, and ~/.hermes path).
+# Replace __SERVICE_USER__ with the Unix account that runs Cursor SDK.
 Documentation=file:__INSTALL_ROOT__/README.md
-Documentation=file:__INSTALL_ROOT__/docs/reference/hermes-custom-endpoint.md
-Documentation=https://hermes-agent.nousresearch.com/docs/integrations/providers
+Documentation=file:__INSTALL_ROOT__/docs/operator-setup.md
 After=network-online.target
 Wants=network-online.target
 
@@ -22,7 +21,7 @@ WorkingDirectory=__INSTALL_ROOT__
 EnvironmentFile=__INSTALL_ROOT__/.env.local
 Environment=NODE_ENV=production
 
-# UMask 0077 so any file the SDK writes (artifacts under hermes-workspace/,
+# UMask 0077 so any file the SDK writes (artifacts under agent-workspace/,
 # tmpfiles, crash logs) is created mode 0600 and inaccessible to other
 # users on the host. Defense-in-depth against future SDK behavior changes.
 UMask=0077
@@ -41,18 +40,18 @@ RestartSec=5
 
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=hermes-cursor-api
+SyslogIdentifier=h31d3nt0r
 
 # Conservative hardening. /home stays writable so Cursor SDK can persist
-# any local-runtime state under hermes-workspace/ and ~/.cursor as needed.
+# local-runtime state (~/.cursor, project caches).
 #
 # TEMP (operator): NoNewPrivileges + RestrictSUIDSGID blocks sudo/setuid in any
 # process spawned under this service (SDK local runs / tool children). Omit
-# these two directives so Cursor bridge turns can elevate when needed — restore
+# these two directives so bridge turns can elevate when needed — restore
 # before putting this host in a hardened posture or multi-operator exposure.
 PrivateTmp=true
 ProtectSystem=strict
-ReadWritePaths=__INSTALL_ROOT__ /home/__SERVICE_USER__/.hermes
+ReadWritePaths=__INSTALL_ROOT__ /home/__SERVICE_USER__
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true

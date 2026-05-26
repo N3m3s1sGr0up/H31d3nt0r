@@ -404,7 +404,7 @@ async function handleStreaming(
       heartbeat = setInterval(() => {
         void (async () => {
           try {
-            await out.write(sseComment(`hermes-heartbeat ${Date.now()}`));
+            await out.write(sseComment(`bridge-heartbeat ${Date.now()}`));
           } catch {
             /* stream closed */
           }

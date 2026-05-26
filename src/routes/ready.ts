@@ -25,7 +25,7 @@ export function registerReadyRoute(app: Hono, deps: ReadyRouteDeps): void {
     const meta = bridgeReleaseMetadata();
     const base = {
       ok: true as const,
-      service: "hermes-cursor-api",
+      service: "h31d3nt0r",
       version: meta.version,
       uptimeSec,
       bridgeGeneration: config.bridgeGeneration,

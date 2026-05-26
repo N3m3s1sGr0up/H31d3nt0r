@@ -1,5 +1,4 @@
 import { existsSync, readFileSync } from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -14,21 +13,17 @@ export interface Config {
   readonly bridgeApiKey: string;
   readonly host: string;
   readonly port: number;
-  /** Cursor SDK local cwd (repo + Hermes home by default). */
+  /** Cursor SDK local cwd — install root plus optional extra tree (see `BRIDGE_EXTRA_CWD`). */
   readonly workspaceCwd: string | readonly string[];
-  /** Hermes profile directory (~/.hermes). */
-  readonly hermesHomeDir: string;
   /**
    * Cursor layers for `AgentOptions.local.settingSources`.
-   * Default [] matches prior bridge behavior (no ambient settings/MCP discovery).
-   * Set via `CURSOR_LOCAL_SETTING_SOURCES=project,user` to inherit workspace and
-   * user MCP/rules from Cursor on disk — often needed when tools feel "offline".
+   * Defaults to `project,user` via env parsing — see `.env.local.example`.
    */
   readonly localSettingSources: readonly SettingSource[];
   /**
-   * Optional `AgentOptions.mcpServers` passed on every Cursor run — register
-   * stdio/HTTP MCP (e.g. Hermes MCP) explicitly. JSON object keyed by alias.
-   * See `CURSOR_AGENT_MCP_SERVERS` and docs/hermes-setup.md.
+   * Optional `AgentOptions.mcpServers` passed on every Cursor run —
+   * register stdio/HTTP MCP explicitly. JSON object keyed by alias.
+   * See `CURSOR_AGENT_MCP_SERVERS`.
    */
   readonly agentMcpServers?: Readonly<Record<string, McpServerConfig>>;
   /** Reserved for v2 (agent CRUD). Honored only where applicable in v1. */
@@ -50,8 +45,8 @@ export interface Config {
   /** Periodic SSE `: comment` pings (ms) so intermediaries idle-open the TCP session. Zero disables. */
   readonly sseHeartbeatIntervalMs: number;
   /**
-   * Optional OpenAI-compatible HTTPS endpoint for Hermes-native tool/function
-   * calling parity. Cursor remains the fallback for plain chat unless mode is always.
+   * Optional OpenAI-compatible HTTPS endpoint for canonical `tool_calls` when
+   * proxying chat upstream. Cursor remains the fallback when mode is off.
    */
   readonly chatUpstream: ChatUpstreamConfig;
 }
@@ -199,7 +194,7 @@ function parseChatUpstreamConfig(): ChatUpstreamConfig {
     120_000,
   );
   const url = rawUrl?.length ? rawUrl : undefined;
-  let apiKey = apiKeyRaw?.length ? apiKeyRaw : undefined;
+  const apiKey = apiKeyRaw?.length ? apiKeyRaw : undefined;
   if (mode !== "off" && (!url?.length || !apiKey?.length)) {
     throw new Error(
       `BRIDGE_CHAT_UPSTREAM_MODE=${mode} requires BRIDGE_CHAT_UPSTREAM_URL plus BRIDGE_CHAT_UPSTREAM_API_KEY (or OPENAI_API_KEY).`,
@@ -215,15 +210,13 @@ export function loadConfig(options: LoadConfigOptions = {}): Config {
     bridgeApiKey: required("BRIDGE_API_KEY", process.env.BRIDGE_API_KEY),
     host: process.env.HOST ?? "127.0.0.1",
     port: parsePort(process.env.PORT ?? "8787"),
-    hermesHomeDir: process.env.HERMES_HOME ?? path.join(os.homedir(), ".hermes"),
     workspaceCwd: (() => {
-      /** Default cwd for SDK runs — this repository/install root (`H31d3nt0r` standalone). Nested monorepos set `WORKSPACE_CWD` to the outer app tree instead. */
       const repoRoot = process.env.WORKSPACE_CWD ?? SERVICE_ROOT;
-      const hermesHome = process.env.HERMES_HOME ?? path.join(os.homedir(), ".hermes");
-      if (process.env.WORKSPACE_CWD_ONLY === "1") {
+      const extra = process.env.BRIDGE_EXTRA_CWD?.trim();
+      if (process.env.WORKSPACE_CWD_ONLY === "1" || !extra) {
         return repoRoot;
       }
-      return repoRoot === hermesHome ? repoRoot : [repoRoot, hermesHome];
+      return repoRoot === extra ? repoRoot : [repoRoot, extra];
     })(),
     localSettingSources: parseCommaSettingSources(process.env.CURSOR_LOCAL_SETTING_SOURCES),
     agentMcpServers: parseAgentMcpServers(process.env.CURSOR_AGENT_MCP_SERVERS),

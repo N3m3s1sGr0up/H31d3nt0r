@@ -9,9 +9,7 @@ import type {
   SettingSource,
 } from "@cursor/sdk";
 
-import {
-  buildOpenAiToolBridgeAppendage,
-} from "../openai/tool-bridge.js";
+import { buildOpenAiToolBridgeAppendage } from "../openai/tool-bridge.js";
 import type { OpenAIChatToolDefinition, OpenAIToolCall } from "../openai/types.js";
 
 import { buildBridgeSystemContext, prependBridgeContext } from "./bridge-context.js";
@@ -22,7 +20,7 @@ export interface ChatMessage {
   readonly tool_calls?: readonly OpenAIToolCall[];
 }
 
-/** When set, the bridge injects OpenAI tool definitions and parses `HERMES_BRIDGE_TOOL_JSON` from Cursor output (v1.1). */
+/** When set, injects OpenAI tool definitions and parses `OPENAI_COMPAT_TOOL_JSON` from Cursor output (v1.1). */
 export interface OpenAiToolBridgeInput {
   readonly tools?: readonly OpenAIChatToolDefinition[];
   readonly toolChoice?: unknown;
@@ -31,7 +29,6 @@ export interface OpenAiToolBridgeInput {
 export interface CursorClientOptions {
   readonly cursorApiKey: string;
   readonly workspaceCwd: string | readonly string[];
-  readonly hermesHomeDir: string;
   readonly localSettingSources?: readonly SettingSource[];
   readonly agentMcpServers?: Readonly<Record<string, McpServerConfig>>;
 }
@@ -42,8 +39,8 @@ export interface StreamingChatHandle {
 }
 
 /**
- * Thin wrapper around the Cursor SDK. All Hermes traffic uses Cursor local
- * runtime with repo + ~/.hermes on the cwd path and bridge context injected.
+ * Thin wrapper around the Cursor SDK. Chat traffic uses Cursor local runtime
+ * with `workspaceCwd` and bridge context injected before each prompt.
  */
 export class CursorClient {
   readonly #apiKey: string;
@@ -55,12 +52,17 @@ export class CursorClient {
   constructor(options: CursorClientOptions) {
     this.#apiKey = options.cursorApiKey;
     this.#cwd = options.workspaceCwd;
-    const repoRoot = Array.isArray(options.workspaceCwd)
-      ? options.workspaceCwd[0] ?? options.hermesHomeDir
-      : options.workspaceCwd;
+    const cwd = options.workspaceCwd;
+    const repoRoot = typeof cwd === "string" ? cwd : (cwd[0] ?? "");
+    const extraWorkspace =
+      typeof cwd === "string"
+        ? undefined
+        : cwd.length > 1
+          ? cwd[1]
+          : undefined;
     this.#bridgeContext = buildBridgeSystemContext({
       repoRoot,
-      hermesHome: options.hermesHomeDir,
+      extraWorkspaceRoot: extraWorkspace,
     });
     this.#settingSources = options.localSettingSources ?? ["project", "user"];
     this.#mcpServers = options.agentMcpServers;
@@ -104,7 +106,7 @@ export class CursorClient {
     return out;
   }
 
-  /** `Cursor.models.list({ apiKey })` — proxied for U8 `/v1/models`. */
+  /** `Cursor.models.list({ apiKey })` — proxied for `/v1/models`. */
   async listModels(): Promise<SDKModel[]> {
     return Cursor.models.list({ apiKey: this.#apiKey });
   }
@@ -154,7 +156,7 @@ export class CursorClient {
   }
 }
 
-/** Strip optional cursor/ prefix from Hermes model ids. */
+/** Strip optional `cursor/` or `cursor:` prefix from route-supplied model ids. */
 export function normalizeCursorModelId(model: string): string {
   if (model.startsWith("cursor/")) return model.slice("cursor/".length);
   if (model.startsWith("cursor:")) return model.slice("cursor:".length);
@@ -163,7 +165,7 @@ export function normalizeCursorModelId(model: string): string {
 
 /**
  * Flatten OpenAI chat messages into a single prompt string. The Cursor SDK
- * takes a single prompt; the bridge composes turns with explicit role labels
+ * takes a single prompt; the gateway composes turns with explicit role labels
  * so the agent can read the conversation deterministically.
  */
 export function messagesToPrompt(messages: ChatMessage[]): string {

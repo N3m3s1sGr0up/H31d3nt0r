@@ -4,10 +4,10 @@ import path from "node:path";
 import { SERVICE_ROOT } from "./config.js";
 
 /**
- * Single source Hermes/operators use to interpret `bridgeGeneration` bumps across
- * restarts — keep bullets short so health/capabilities stay compact.
+ * Human-readable notes for `bridgeGeneration` / health `changelog` — keep short.
  */
 export const BRIDGE_GENERATION_CHANGELOG: readonly string[] = [
+  "v0.2.0: public OpenAI-first branding — service id `h31d3nt0r`, `OPENAI_COMPAT_TOOL_JSON` tool line, optional `BRIDGE_EXTRA_CWD` instead of implicit second homedir; capabilities field `extra_workspace_cwd`.",
   "v0.1.3: upstream OpenAI-compat chat proxy (BRIDGE_CHAT_UPSTREAM_*), GET /v1/models/:id, chat normalization (developer, multimodal, tool_call_id), SSE usage stub for stream_options.include_usage, structured errors expose OpenAI type/param mirrors alongside bridge codes.",
   "v0.1.1: timeouts (non-stream + stream wall-clock + SDK connect), SSE comment heartbeats, structured SSE bridge.error payloads, GET /ready (Cursor probe), health reports version + changelog.",
 ];

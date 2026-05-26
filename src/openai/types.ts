@@ -1,8 +1,6 @@
 /**
- * OpenAI Chat Completions request/response shapes used by the Hermes
- * provider. Intentionally minimal — only the fields we actually read or
- * emit. Everything else is accepted but ignored on input and not produced
- * on output.
+ * OpenAI Chat Completions request/response shapes. Intentionally minimal —
+ * only fields the gateway reads or emits. Everything else may be ignored on input.
  */
 
 export type OpenAIChatRole = "system" | "developer" | "user" | "assistant" | "tool";
@@ -19,9 +17,9 @@ export interface OpenAIToolCall {
 export interface OpenAIChatMessageIn {
   readonly role: OpenAIChatRole;
   readonly content: string | null;
-  /** OpenAI assistant tool_calls from prior turns (Hermes round-trip). */
+  /** OpenAI assistant tool_calls from prior turns (multi-turn tool loops). */
   readonly tool_calls?: readonly OpenAIToolCall[];
-  /** Required when role is tool (Hermes/OpenAI parallel tool-call round-trip). */
+  /** Required when role is tool (parallel tool-call round-trip). */
   readonly tool_call_id?: string;
 }
 

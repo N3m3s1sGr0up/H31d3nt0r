@@ -21,7 +21,7 @@ export function registerHealthRoute(
       bridgeGeneration: config.bridgeGeneration,
       changelog: [...meta.generationChangelog],
       uptimeSec: Math.max(0, Math.round((Date.now() - startedAt) / 1000)),
-      service: "hermes-cursor-api",
+      service: "h31d3nt0r",
       version: meta.version,
     });
   });

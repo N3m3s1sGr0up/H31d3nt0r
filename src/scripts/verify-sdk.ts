@@ -26,7 +26,7 @@ if (!apiKey) {
 const here = path.dirname(fileURLToPath(import.meta.url));
 const serviceRoot = path.resolve(here, "..", "..");
 const workspaceCwd =
-  process.env.WORKSPACE_CWD ?? path.join(serviceRoot, "hermes-workspace");
+  process.env.WORKSPACE_CWD ?? path.join(serviceRoot, "agent-workspace");
 
 if (!existsSync(workspaceCwd)) {
   mkdirSync(workspaceCwd, { recursive: true });

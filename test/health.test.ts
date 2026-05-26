@@ -12,8 +12,7 @@ function fixtureConfig(overrides: Partial<{ bridgeGeneration: number }> = {}) {
     bridgeApiKey: "bridge-secret",
     host: "127.0.0.1",
     port: 8787,
-    workspaceCwd: "/tmp/hermes-test-workspace",
-    hermesHomeDir: "/tmp/.hermes",
+    workspaceCwd: "/tmp/bridge-test-workspace",
     localSettingSources: ["project", "user"] as const,
     maxAgents: 4,
     bridgeGeneration: overrides.bridgeGeneration ?? 1_700_000_000_000,
@@ -27,8 +26,7 @@ function buildTestApp() {
     config: fixtureConfig(),
     cursorClient: new CursorClient({
       cursorApiKey: "cursor-secret",
-      workspaceCwd: "/tmp/hermes-test-workspace",
-      hermesHomeDir: "/tmp/.hermes",
+      workspaceCwd: "/tmp/bridge-test-workspace",
     }),
   });
 }
@@ -40,7 +38,7 @@ describe("GET /health", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as Record<string, unknown>;
     expect(body.ok).toBe(true);
-    expect(body.service).toBe("hermes-cursor-api");
+    expect(body.service).toBe("h31d3nt0r");
     expect(body.bridgeGeneration).toBe(1_700_000_000_000);
     expect(typeof body.uptimeSec).toBe("number");
     expect(typeof body.version).toBe("string");

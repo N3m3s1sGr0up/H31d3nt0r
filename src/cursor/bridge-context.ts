@@ -2,31 +2,27 @@ import type { OpenAIToolCall } from "../openai/types.js";
 
 /**
  * Injected into every Cursor run so the model does not claim it lacks host access.
- * OpenAI `tools` from the HTTP client are forwarded as system text (v1.1) for Hermes tool round-trips.
+ * OpenAI `tools` from the HTTP client are merged separately (see `tool-bridge.ts`).
  */
 export function buildBridgeSystemContext(paths: {
   readonly repoRoot: string;
-  readonly hermesHome: string;
+  readonly extraWorkspaceRoot?: string;
 }): string {
-  return [
-    "You are running on the operator's machine via the hermes-cursor-api bridge (Cursor SDK local runtime).",
-    "You have real access to the filesystem and shell through Cursor tools — do not say you cannot work on this computer.",
+  const lines = [
+    "You are running on the operator's machine through an OpenAI-compatible HTTP gateway that executes work via the Cursor SDK local runtime.",
+    "When the SDK exposes filesystem and terminal tools, you can use them on the declared workspace directories — do not claim you lack access unless a tool genuinely fails.",
     "",
     "Important paths:",
-    `- Project repository: ${paths.repoRoot}`,
-    `- Hermes home: ${paths.hermesHome}`,
-    `- Persona (SOUL): ${paths.hermesHome}/SOUL.md — edit this file when the user asks to change your name, tone, or persona.`,
-    `- Hermes memory files: ${paths.hermesHome}/memories/MEMORY.md and ${paths.hermesHome}/memories/USER.md — update these when the user asks you to remember something durable.`,
-    `- Hermes config: ${paths.hermesHome}/config.yaml (read-only unless the user explicitly asks to change Hermes settings).`,
+    `- Primary workspace: ${paths.repoRoot}`,
+  ];
+  if (paths.extraWorkspaceRoot !== undefined && paths.extraWorkspaceRoot.length > 0) {
+    lines.push(`- Additional workspace: ${paths.extraWorkspaceRoot}`);
+  }
+  lines.push(
     "",
-    `Compound Engineering (EveryInc) skills — on-disk copies Hermes loads as category compound-engineering:`,
-    `- Directory: ${paths.hermesHome}/skills/compound-engineering/<skill-name>/SKILL.md`,
-    `- When planning, structured implementation, brainstorms, PR/commit flows, reviews, or other CE workflows fit the task, read the matching SKILL.md with Cursor file tools (and linked references/ under that skill) before improvising.`,
-    `- Common entrypoints: ce-plan, ce-work, ce-work-beta, ce-brainstorm, ce-setup, ce-code-review, ce-commit-push-pr.`,
-    `- Same catalog appears in Hermes as \`hermes skills list\` (compound-engineering); this path is authoritative for Cursor runs.`,
-    "",
-    "When the user asks to update soul, memory, or project files, use Cursor file and terminal tools to make the change, then confirm what you changed.",
-  ].join("\n");
+    "Follow the end-user instructions for each request. Persist data only where the user (or upstream client) directs you.",
+  );
+  return lines.join("\n");
 }
 
 export function prependBridgeContext(

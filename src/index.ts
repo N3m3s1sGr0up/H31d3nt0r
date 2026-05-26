@@ -55,7 +55,7 @@ function logStartup(info: {
 }): void {
   log({
     level: "info",
-    msg: "hermes-cursor-api listening",
+    msg: "h31d3nt0r listening",
     host: info.host,
     port: info.port,
     bridgeGeneration: info.bridgeGeneration,

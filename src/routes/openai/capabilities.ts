@@ -40,7 +40,10 @@ export function registerCapabilitiesRoute(
       request_correlation:
         "Every response echoes `X-Request-Id` (from client `X-Request-Id` when valid ASCII alnum/`._:-` ≤128 chars, else bridge-generated `req_*`). JSON `/v1/*` errors include `error.request_id` when present; streaming terminal `bridge.error` objects may include `error.request_id` for log correlation.",
       workspace_cwd: Array.isArray(cwd) ? cwd : [cwd],
-      hermes_home: config.hermesHomeDir,
+      extra_workspace_cwd:
+        Array.isArray(config.workspaceCwd) && config.workspaceCwd.length > 1
+          ? config.workspaceCwd[1]
+          : null,
       timeouts_ms: {
         chat_completion_max: config.chatCompletionTimeoutMs,
         chat_stream_max: config.chatStreamTimeoutMs,
@@ -49,8 +52,8 @@ export function registerCapabilitiesRoute(
         sse_heartbeat_ping: config.sseHeartbeatIntervalMs,
       },
       cursor_setting_sources: config.localSettingSources,
-      hermes_openai_tool_loop:
-        "Configure BRIDGE_CHAT_UPSTREAM_* for Hermes-native tool_calls via an OpenAI-compatible upstream (modes: off | tools | always). Fallback: Cursor runs with injected tool defs plus optional HERMES_BRIDGE_TOOL_JSON tail parse on assistant text.",
+      openai_tool_routing:
+        "BRIDGE_CHAT_UPSTREAM_* forwards /v1/chat/completions to an OpenAI-compatible upstream when enabled (modes: off | tools | always). Otherwise Cursor handles chat; for tool callbacks over the Cursor path, see docs/reference/openai-extensions.md (OPENAI_COMPAT_TOOL_JSON).",
       cursor_native_model_prefixes: ["cursor/", "cursor:"],
       optional_mcp: "Set CURSOR_AGENT_MCP_SERVERS to attach extra MCP servers to every Cursor run.",
     });

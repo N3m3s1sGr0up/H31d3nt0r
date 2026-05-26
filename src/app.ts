@@ -59,7 +59,6 @@ export function buildApp(options: BuildAppOptions): BridgeApp {
     new CursorClient({
       cursorApiKey: config.cursorApiKey,
       workspaceCwd: config.workspaceCwd,
-      hermesHomeDir: config.hermesHomeDir,
       localSettingSources: config.localSettingSources,
       agentMcpServers: config.agentMcpServers,
     });

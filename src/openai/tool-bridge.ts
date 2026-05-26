@@ -3,7 +3,7 @@ import { randomBytes } from "node:crypto";
 import type { OpenAIChatToolDefinition, OpenAIToolCall } from "./types.js";
 
 /** Token before JSON payload; model output must end with this token then `{"tool_calls":[...]}`. */
-export const BRIDGE_TOOL_JSON_TOKEN = "HERMES_BRIDGE_TOOL_JSON ";
+export const BRIDGE_TOOL_JSON_TOKEN = "OPENAI_COMPAT_TOOL_JSON ";
 
 export function collectToolNames(
   tools: readonly OpenAIChatToolDefinition[] | undefined,
@@ -18,13 +18,13 @@ export function collectToolNames(
   return names;
 }
 
-function toolChoiceInstruction(toolChoice: unknown): string {
+function toolChoiceInstruction(toolChoice: unknown, tokenLabel: string): string {
   if (toolChoice === undefined || toolChoice === null) return "";
   if (toolChoice === "none") {
-    return "The client set tool_choice to none — do not append the HERMES_BRIDGE_TOOL_JSON line; reply with natural language only.";
+    return `The client set tool_choice to none — do not append the ${tokenLabel} line; reply with natural language only.`;
   }
   if (toolChoice === "required") {
-    return "The client set tool_choice to required — you must append exactly one HERMES_BRIDGE_TOOL_JSON line with at least one tool call (use the registered tools below).";
+    return `The client set tool_choice to required — you must append exactly one ${tokenLabel} line with at least one tool call (use the registered tools below).`;
   }
   if (typeof toolChoice === "object" && !Array.isArray(toolChoice)) {
     const o = toolChoice as Record<string, unknown>;
@@ -33,7 +33,7 @@ function toolChoiceInstruction(toolChoice: unknown): string {
     if (type === "function" && fn && typeof fn === "object") {
       const name = (fn as { name?: string }).name;
       if (typeof name === "string" && name.length > 0) {
-        return `The client requires a call to function "${name}" — use that exact name in HERMES_BRIDGE_TOOL_JSON.`;
+        return `The client requires a call to function "${name}" — use that exact name in ${tokenLabel}.`;
       }
     }
   }
@@ -42,23 +42,25 @@ function toolChoiceInstruction(toolChoice: unknown): string {
 
 /**
  * Appended to the merged system prompt when the client sends OpenAI `tools`.
- * Cursor SDK has no native arbitrary-function registration; Hermes executes tools after this bridge returns tool_calls.
+ * The Cursor SDK has no arbitrary function-registration API — HTTP clients that
+ * need `tool_calls` in responses rely on this line protocol or on upstream proxy mode.
  */
 export function buildOpenAiToolBridgeAppendage(
   tools: readonly OpenAIChatToolDefinition[],
   toolChoice: unknown,
 ): string {
-  const choiceHint = toolChoiceInstruction(toolChoice);
+  const tokenLabel = "OPENAI_COMPAT_TOOL_JSON";
+  const choiceHint = toolChoiceInstruction(toolChoice, tokenLabel);
   const serialized = JSON.stringify(tools, null, 0);
   return [
     "---",
-    "hermes-cursor-api v1.1 — OpenAI tools (client / Hermes)",
+    "OpenAI-compatible tools bridge (extension)",
     "The HTTP client listed function tools below. Cursor runs with its own built-in tools; this block is for OpenAI-compatible round-trips.",
-    "When you want the client (e.g. Hermes) to execute a registered function, append a single final line to your reply after any user-visible text:",
-    "Line format: HERMES_BRIDGE_TOOL_JSON <JSON object>",
+    "When you want the HTTP client to execute a registered function, append a single final line to your reply after any user-visible text:",
+    `Line format: ${tokenLabel} <JSON object>`,
     'The JSON object must be: {"tool_calls":[{"id":"call_…","type":"function","function":{"name":"<exact name from list>","arguments":"<JSON string of args per OpenAI>"}}]}',
     "`arguments` must be a string containing minified JSON (OpenAI function calling), not a raw object.",
-    "Use only `name` values that appear in the tool list. If you are not requesting client-side tools, omit the HERMES_BRIDGE_TOOL_JSON line entirely.",
+    `Use only \`name\` values that appear in the tool list. If you are not requesting client-side tools, omit the ${tokenLabel} line entirely.`,
     choiceHint,
     "",
     "Tool definitions (JSON):",
@@ -84,7 +86,7 @@ function normalizeArguments(args: unknown): string {
 }
 
 /**
- * Parses the assistant result for HERMES_BRIDGE_TOOL_JSON and validates tool names.
+ * Parses assistant text for `OPENAI_COMPAT_TOOL_JSON` and validates tool names.
  */
 export function parseBridgeToolJsonFromAssistantText(
   fullText: string,

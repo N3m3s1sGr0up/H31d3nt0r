@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 
 import type { Context, MiddlewareHandler } from "hono";
 
-/** Printable token safe for logs and downstream tracing (Hermes/custom provider). */
+/** Printable token safe for logs and downstream tracing. */
 const INCOMING_ID = /^[A-Za-z0-9_.:-]{1,128}$/;
 
 export function deriveRequestId(incomingHeader: string | undefined): string {

@@ -1,14 +1,11 @@
 /**
- * Hermes uses `context_length` from `/v1/models` to detect a model's window
- * (R28). The Cursor SDK's `ModelListItem` does not currently expose this
- * field, so the bridge:
+ * OpenAI-compatible clients commonly read `context_length` from `/v1/models`.
+ * The Cursor SDK's `ModelListItem` does not currently expose this field, so:
  *
- * 1. Reads `MODEL_CONTEXT_LENGTHS` from env (comma-separated `id:tokens`),
- *    treating it as the operator-supplied source of truth.
- * 2. Otherwise emits no `context_length` for that model.
+ * 1. Reads `MODEL_CONTEXT_LENGTHS` from env (comma-separated `id:tokens`).
+ * 2. Otherwise omits `context_length` for that model entry.
  *
- * The Hermes side can still override via `model.context_length:` in
- * `~/.hermes/config.yaml` (see docs/reference/hermes-custom-endpoint.md).
+ * Clients may still impose their own context limits independent of this field.
  */
 
 export interface ContextLengthTable {
