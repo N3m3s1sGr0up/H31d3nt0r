@@ -1,0 +1,64 @@
+[Unit]
+Description=hermes-cursor-api — Loopback HTTP bridge for @cursor/sdk (Hermes provider: custom)
+# Before enable: replace every __INSTALL_ROOT__ with the absolute clone path (no trailing slash).
+# Replace __SERVICE_USER__ with the Unix account that runs Cursor SDK (User, Group, and ~/.hermes path).
+Documentation=file:__INSTALL_ROOT__/README.md
+Documentation=file:__INSTALL_ROOT__/docs/reference/hermes-custom-endpoint.md
+Documentation=https://hermes-agent.nousresearch.com/docs/integrations/providers
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__SERVICE_USER__
+Group=__SERVICE_USER__
+WorkingDirectory=__INSTALL_ROOT__
+
+# .env.local holds CURSOR_API_KEY + BRIDGE_API_KEY. MUST be chmod 600
+# (operator responsibility, verified by the README install steps). systemd
+# enforces no permission requirements on EnvironmentFile, so a missing
+# chmod will be silently world-readable — guard with `stat -c %a` before
+# enabling, and re-check after any rotation.
+EnvironmentFile=__INSTALL_ROOT__/.env.local
+Environment=NODE_ENV=production
+
+# UMask 0077 so any file the SDK writes (artifacts under hermes-workspace/,
+# tmpfiles, crash logs) is created mode 0600 and inaccessible to other
+# users on the host. Defense-in-depth against future SDK behavior changes.
+UMask=0077
+
+# Production ExecStart runs system Node (not the Cursor-bundled one).
+# `apt install nodejs npm` puts node at /usr/bin/node; verify with `which node`
+# and update this path if your distro installs node elsewhere.
+ExecStart=/usr/bin/node __INSTALL_ROOT__/dist/index.js
+
+KillSignal=SIGTERM
+# Process drains in-flight requests then exits; the app already has a 30s
+# hard ceiling internally. Give systemd a 5s buffer on top.
+TimeoutStopSec=35
+Restart=on-failure
+RestartSec=5
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=hermes-cursor-api
+
+# Conservative hardening. /home stays writable so Cursor SDK can persist
+# any local-runtime state under hermes-workspace/ and ~/.cursor as needed.
+#
+# TEMP (operator): NoNewPrivileges + RestrictSUIDSGID blocks sudo/setuid in any
+# process spawned under this service (SDK local runs / tool children). Omit
+# these two directives so Cursor bridge turns can elevate when needed — restore
+# before putting this host in a hardened posture or multi-operator exposure.
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=__INSTALL_ROOT__ /home/__SERVICE_USER__/.hermes
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictRealtime=true
+LockPersonality=true
+RestrictNamespaces=true
+
+[Install]
+WantedBy=multi-user.target

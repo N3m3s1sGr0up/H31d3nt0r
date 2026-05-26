@@ -1,0 +1,21 @@
+# Node
+node_modules/
+dist/
+*.log
+npm-debug.log*
+
+# Secrets
+.env
+.env.local
+.env.*.local
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Cursor SDK working directory (runtime artifacts; keep only tracked stubs)
+hermes-workspace/*
+!hermes-workspace/.gitkeep
+!hermes-workspace/context.md
