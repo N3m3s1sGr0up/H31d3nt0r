@@ -4,6 +4,7 @@ import { buildApp } from "../src/app.js";
 import { Semaphore } from "../src/concurrency.js";
 import type { ChatMessage, CursorClient, StreamingChatHandle } from "../src/cursor/client.js";
 import type { Config } from "../src/config.js";
+import { SERVICE_ROOT } from "../src/config.js";
 
 import { ConfigurationError } from "@cursor/sdk";
 import type { Run, RunResult, SDKAgent, SDKMessage } from "@cursor/sdk";
@@ -140,6 +141,7 @@ describe("POST /v1/chat/completions (non-stream)", () => {
     expect(body.choices[0]?.message.role).toBe("assistant");
     expect(body.choices[0]?.message.content).toBe("SDK_OK");
     expect(body.choices[0]?.finish_reason).toBe("stop");
+    expect((body as { usage?: { prompt_tokens?: number } }).usage?.prompt_tokens).toBeGreaterThan(0);
   });
 
   it("rejects requests without bearer (no SDK call)", async () => {
@@ -619,7 +621,59 @@ describe("POST /v1/chat/completions (stream)", () => {
       expect.any(Array),
       "composer-2",
       expect.objectContaining({ tools, toolChoice: undefined }),
+      undefined,
     );
+  });
+
+  it("passes X-Bridge-Workspace-Cwd override to Cursor client when allowed", async () => {
+    const chatComplete = vi.fn(async () => ({
+      id: "run-ws",
+      status: "finished" as const,
+      result: "OK",
+    }));
+    const { hono } = buildApp({
+      config: { ...fixtureConfig(), workspaceCwd: SERVICE_ROOT },
+      cursorClient: fakeClient({ chatComplete }),
+    });
+    const res = await hono.request("http://localhost/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        ...withBearer(),
+        "X-Bridge-Workspace-Cwd": SERVICE_ROOT,
+      },
+      body: JSON.stringify({
+        model: "composer-2",
+        messages: [{ role: "user", content: "Hi" }],
+      }),
+    });
+    expect(res.status).toBe(200);
+    expect(chatComplete).toHaveBeenCalledWith(
+      expect.any(Array),
+      "composer-2",
+      undefined,
+      SERVICE_ROOT,
+    );
+  });
+
+  it("returns 400 when X-Bridge-Workspace-Cwd is outside allowed roots", async () => {
+    const chatComplete = vi.fn();
+    const { hono } = buildApp({
+      config: fixtureConfig(),
+      cursorClient: fakeClient({ chatComplete }),
+    });
+    const res = await hono.request("http://localhost/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        ...withBearer(),
+        "X-Bridge-Workspace-Cwd": "/etc/passwd",
+      },
+      body: JSON.stringify({
+        model: "composer-2",
+        messages: [{ role: "user", content: "Hi" }],
+      }),
+    });
+    expect(res.status).toBe(400);
+    expect(chatComplete).not.toHaveBeenCalled();
   });
 
   it("returns OpenAI tool_calls when the model emits OPENAI_COMPAT_TOOL_JSON", async () => {
@@ -664,7 +718,57 @@ describe("POST /v1/chat/completions (stream)", () => {
     expect(body.choices[0]?.message.tool_calls?.[0]?.function.name).toBe("memory_store");
   });
 
-  it("emits synthetic usage chunk when stream_options.include_usage is true", async () => {
+  it("emits tool_calls in the final streaming chunk when the model emits OPENAI_COMPAT_TOOL_JSON", async () => {
+    const payload = {
+      tool_calls: [
+        {
+          id: "call_stream",
+          type: "function",
+          function: { name: "memory_store", arguments: "{}" },
+        },
+      ],
+    };
+    const finale = `OPENAI_COMPAT_TOOL_JSON ${JSON.stringify(payload)}`;
+    const full = `Done.\n${finale}`;
+    const fakeRun = makeFakeRun({ text: full, chunks: ["Done.\n", finale] });
+    const { hono } = buildApp({
+      config: fixtureConfig(),
+      cursorClient: fakeClient({
+        openStreamingChat: async () => fakeStreamingHandle(fakeRun),
+      }),
+    });
+    const res = await hono.request("http://localhost/v1/chat/completions", {
+      method: "POST",
+      headers: withBearer(),
+      body: JSON.stringify({
+        model: "composer-2",
+        stream: true,
+        messages: [{ role: "user", content: "Remember" }],
+        tools: [{ type: "function", function: { name: "memory_store" } }],
+      }),
+    });
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    const dataLines = text
+      .split("\n")
+      .filter((l) => l.startsWith("data: ") && !l.includes("[DONE]"))
+      .map((l) => l.slice("data: ".length));
+    const parsed = dataLines.map(
+      (l) =>
+        JSON.parse(l) as {
+          choices: Array<{
+            delta?: { tool_calls?: { function: { name: string } }[] };
+            finish_reason?: string | null;
+          }>;
+        },
+    );
+    const withTools = parsed.find((c) => c.choices[0]?.delta?.tool_calls?.length);
+    expect(withTools?.choices[0]?.delta?.tool_calls?.[0]?.function.name).toBe("memory_store");
+    const terminal = parsed.find((c) => c.choices[0]?.finish_reason === "tool_calls");
+    expect(terminal).toBeDefined();
+  });
+
+  it("emits estimated usage chunk when stream_options.include_usage is true", async () => {
     const fakeRun = makeFakeRun({ text: "Hi", chunks: ["H", "i"] });
     const { hono } = buildApp({
       config: fixtureConfig(),
@@ -690,9 +794,10 @@ describe("POST /v1/chat/completions (stream)", () => {
       .map((l) => l.slice("data: ".length));
     const penultimate = JSON.parse(dataLines[dataLines.length - 2] as string) as {
       choices: Array<{ finish_reason?: string | null }>;
-      usage?: { prompt_tokens?: number };
+      usage?: { prompt_tokens?: number; completion_tokens?: number };
     };
-    expect(penultimate.usage?.prompt_tokens).toBe(0);
+    expect(penultimate.usage?.prompt_tokens).toBeGreaterThan(0);
+    expect(penultimate.usage?.completion_tokens).toBeGreaterThan(0);
     expect(penultimate.choices[0]?.finish_reason).toBe("stop");
   });
 

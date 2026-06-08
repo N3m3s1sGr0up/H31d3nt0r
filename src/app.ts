@@ -21,6 +21,7 @@ import { registerHealthRoute } from "./routes/health.js";
 import { registerCapabilitiesRoute } from "./routes/openai/capabilities.js";
 import { registerChatCompletionsRoute } from "./routes/openai/chat-completions.js";
 import { registerModelsRoute } from "./routes/openai/models.js";
+import { debugRequestLogMiddleware } from "./middleware/debug-request-log.js";
 import { registerReadyRoute } from "./routes/ready.js";
 import { requestIdMiddleware, tryRequestId } from "./request-id.js";
 
@@ -75,6 +76,7 @@ export function buildApp(options: BuildAppOptions): BridgeApp {
   registerHealthRoute(hono, config, startedAt);
   registerReadyRoute(hono, { config, cursorClient, startedAt });
 
+  hono.use("/v1/*", debugRequestLogMiddleware(config.debugRequests));
   hono.use("/v1/*", bearerAuth(config.bridgeApiKey));
   hono.use(
     "/v1/chat/completions",

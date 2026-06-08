@@ -13,6 +13,7 @@ import { buildOpenAiToolBridgeAppendage } from "../openai/tool-bridge.js";
 import type { OpenAIChatToolDefinition, OpenAIToolCall } from "../openai/types.js";
 
 import { buildBridgeSystemContext, prependBridgeContext } from "./bridge-context.js";
+import { resolveModelAlias } from "./model-aliases.js";
 
 export interface ChatMessage {
   readonly role: "system" | "user" | "assistant";
@@ -45,7 +46,10 @@ export interface StreamingChatHandle {
 export class CursorClient {
   readonly #apiKey: string;
   readonly #cwd: string | readonly string[];
-  readonly #bridgeContext: string;
+  readonly #bridgePaths: {
+    readonly repoRoot: string;
+    readonly extraWorkspaceRoot?: string;
+  };
   readonly #settingSources: readonly SettingSource[];
   readonly #mcpServers: Readonly<Record<string, McpServerConfig>> | undefined;
 
@@ -60,17 +64,19 @@ export class CursorClient {
         : cwd.length > 1
           ? cwd[1]
           : undefined;
-    this.#bridgeContext = buildBridgeSystemContext({
+    this.#bridgePaths = {
       repoRoot,
       extraWorkspaceRoot: extraWorkspace,
-    });
+    };
     this.#settingSources = options.localSettingSources ?? ["project", "user"];
     this.#mcpServers = options.agentMcpServers;
   }
 
-  #localOptions(): { cwd: string | string[]; settingSources: SettingSource[] } {
-    const cwd: string | string[] =
-      typeof this.#cwd === "string" ? this.#cwd : [...this.#cwd];
+  #localOptions(
+    cwdOverride?: string | readonly string[],
+  ): { cwd: string | string[]; settingSources: SettingSource[] } {
+    const base = cwdOverride ?? this.#cwd;
+    const cwd: string | string[] = typeof base === "string" ? base : [...base];
     return {
       cwd,
       settingSources: [...this.#settingSources],
@@ -86,8 +92,15 @@ export class CursorClient {
     return { mcpServers: this.#mcpServers };
   }
 
-  #prepareMessages(messages: ChatMessage[]): ChatMessage[] {
-    return prependBridgeContext(messages, this.#bridgeContext);
+  #prepareMessages(
+    messages: ChatMessage[],
+    bridge?: OpenAiToolBridgeInput,
+  ): ChatMessage[] {
+    const hasClientTools = Boolean(bridge?.tools && bridge.tools.length > 0);
+    const context = buildBridgeSystemContext(this.#bridgePaths, {
+      clientToolsRegistered: hasClientTools,
+    });
+    return prependBridgeContext(messages, context);
   }
 
   #appendToolBridge(
@@ -116,13 +129,14 @@ export class CursorClient {
     messages: ChatMessage[],
     modelId: string,
     bridge?: OpenAiToolBridgeInput,
+    cwdOverride?: string | readonly string[],
   ): Promise<RunResult> {
-    const prepared0 = this.#prepareMessages(messages);
+    const prepared0 = this.#prepareMessages(messages, bridge);
     const prepared = this.#appendToolBridge(prepared0, bridge);
     return Agent.prompt(messagesToPrompt(prepared), {
       apiKey: this.#apiKey,
       model: { id: normalizeCursorModelId(modelId) },
-      local: this.#localOptions(),
+      local: this.#localOptions(cwdOverride),
       ...this.#agentOptionsTail(),
     });
   }
@@ -137,13 +151,14 @@ export class CursorClient {
     messages: ChatMessage[],
     modelId: string,
     bridge?: OpenAiToolBridgeInput,
+    cwdOverride?: string | readonly string[],
   ): Promise<StreamingChatHandle> {
-    const prepared0 = this.#prepareMessages(messages);
+    const prepared0 = this.#prepareMessages(messages, bridge);
     const prepared = this.#appendToolBridge(prepared0, bridge);
     const agent = await Agent.create({
       apiKey: this.#apiKey,
       model: { id: normalizeCursorModelId(modelId) },
-      local: this.#localOptions(),
+      local: this.#localOptions(cwdOverride),
       ...this.#agentOptionsTail(),
     });
     try {
@@ -156,11 +171,12 @@ export class CursorClient {
   }
 }
 
-/** Strip optional `cursor/` or `cursor:` prefix from route-supplied model ids. */
+/** Strip optional `cursor/` or `cursor:` prefix, then resolve known typo aliases. */
 export function normalizeCursorModelId(model: string): string {
-  if (model.startsWith("cursor/")) return model.slice("cursor/".length);
-  if (model.startsWith("cursor:")) return model.slice("cursor:".length);
-  return model;
+  let id = model;
+  if (id.startsWith("cursor/")) id = id.slice("cursor/".length);
+  else if (id.startsWith("cursor:")) id = id.slice("cursor:".length);
+  return resolveModelAlias(id);
 }
 
 /**

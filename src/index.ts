@@ -2,6 +2,7 @@ import { serve, type ServerType } from "@hono/node-server";
 
 import { buildApp } from "./app.js";
 import { loadConfig } from "./config.js";
+import { formatEaddrInUseMessage } from "./operator/bind-errors.js";
 
 /**
  * Server entry. Loads config, builds the app, binds to HOST:PORT, and wires
@@ -26,6 +27,15 @@ async function main(): Promise<void> {
       });
     },
   );
+
+  server.on("error", (err: NodeJS.ErrnoException) => {
+    if (err.code === "EADDRINUSE") {
+      console.error(formatEaddrInUseMessage(config.host, config.port));
+      process.exit(1);
+    }
+    log({ level: "error", msg: "server error", error: err.message, code: err.code });
+    process.exit(1);
+  });
 
   const shutdown = (signal: NodeJS.Signals): void => {
     log({ level: "info", msg: "shutdown signal received", signal });

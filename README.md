@@ -1,6 +1,6 @@
 # H31d3nt0r
 
-Minimal **loopback HTTP gateway**: [OpenAI Chat Completions API](https://platform.openai.com/docs/api-reference/chat) shape (`/v1/models`, `/v1/chat/completions`) backed by [`@cursor/sdk`](https://cursor.com/docs/sdk/typescript) local runtime. Intended for tooling that speaks OpenAI-style JSON over Bearer auth — nothing else is assumed about your stack.
+**h31d3nt0r** is a minimal **loopback Cursor API endpoint**: a local HTTP gateway backed by [`@cursor/sdk`](https://cursor.com/docs/sdk/typescript). Its `/v1/*` routes speak the [OpenAI Chat Completions wire format](https://platform.openai.com/docs/api-reference/chat) (`/v1/models`, `/v1/chat/completions`) so OpenAI-compatible clients can connect — that compatibility is the protocol shape, not OpenAI cloud inference. Intended for tooling that sends OpenAI-style JSON over Bearer auth; nothing else is assumed about your stack.
 
 Bindings default to **127.0.0.1** only.
 
@@ -41,7 +41,7 @@ H31d3nt0r/                         # clone root (= npm package root)
 
 ### Tool calling
 
-- **`BRIDGE_CHAT_UPSTREAM_*`**: forward chat to another OpenAI-compatible endpoint for canonical `tool_calls`. `tools` mode only proxies conversations that include a non-empty `tools` array; `always` proxies every qualifying request.
+- **`BRIDGE_CHAT_UPSTREAM_*`**: optionally forward chat to another OpenAI-compatible upstream for canonical `tool_calls` (advanced; default path is Cursor SDK local). `tools` mode only proxies conversations that include a non-empty `tools` array; `always` proxies every qualifying request.
 - **Cursor-direct path**: optional **`OPENAI_COMPAT_TOOL_JSON …`** finale line documented in **`docs/reference/openai-extensions.md`**.
 
 ## Environment
@@ -68,6 +68,7 @@ cp .env.local.example .env.local && chmod 600 .env.local
 # fill CURSOR_API_KEY + BRIDGE_API_KEY
 set -a; source .env.local; set +a
 npm run verify-sdk && npm run typecheck && npm test
+# Live Cursor probe (optional): npm run test:integration
 npm run dev                 # http://127.0.0.1:8787
 ```
 
@@ -75,7 +76,7 @@ Detailed production/systemd instructions: **`docs/operator-setup.md`**.
 
 ### Client sketch
 
-Clients point `OPENAI_API_KEY`/`baseURL` equivalents at **`http://127.0.0.1:8787/v1`** and supply **`Authorization: Bearer <BRIDGE_API_KEY>`** identical to upstream OpenAI bearer semantics.
+Point any OpenAI-compatible client at **`http://127.0.0.1:8787/v1`**. Many clients label the key field `OPENAI_API_KEY` (OpenAI-compat convention); the value must be your **`BRIDGE_API_KEY`** from `.env.local` — not a Cursor platform key (`CURSOR_API_KEY`) and not an OpenAI platform key. Send **`Authorization: Bearer <BRIDGE_API_KEY>`** on `/v1/*`. Discover model IDs from `GET /v1/models` (for example `composer-2.5`). With the gateway running, **`npm run verify-client`** probes `/health` and `/v1/models`. See **`docs/operator-setup.md`** §6 for the full checklist.
 
 ### Graceful shutdown
 

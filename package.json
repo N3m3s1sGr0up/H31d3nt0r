@@ -10,6 +10,7 @@
   "main": "dist/index.js",
   "scripts": {
     "verify-sdk": "tsx src/scripts/verify-sdk.ts",
+    "verify-client": "tsx src/scripts/verify-client.ts",
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/index.js",
     "dev": "tsx watch src/index.ts",

@@ -16,6 +16,7 @@ export const ROUTE_TIMEOUT_DEFAULTS = {
   sdkStreamingConnectTimeoutMs: 120_000,
   sseHeartbeatIntervalMs: 0,
   chatUpstream: ROUTE_CHAT_UPSTREAM_OFF,
+  debugRequests: false,
 } satisfies Pick<
   Config,
   | "chatCompletionTimeoutMs"
@@ -23,4 +24,5 @@ export const ROUTE_TIMEOUT_DEFAULTS = {
   | "sdkStreamingConnectTimeoutMs"
   | "sseHeartbeatIntervalMs"
   | "chatUpstream"
+  | "debugRequests"
 >;
