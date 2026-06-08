@@ -20,7 +20,6 @@ jobs:
   integration:
     needs: unit
     runs-on: ubuntu-latest
-    if: secrets.CURSOR_API_KEY != ''
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -28,7 +27,13 @@ jobs:
           node-version: "20"
           cache: npm
       - run: npm ci
-      - run: npm run test:integration
+      - name: Integration tests (skipped without CURSOR_API_KEY)
         env:
           CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
           BRIDGE_API_KEY: ${{ secrets.BRIDGE_API_KEY || 'ci-bridge-key-not-for-production' }}
+        run: |
+          if [ -z "$CURSOR_API_KEY" ]; then
+            echo "CURSOR_API_KEY not configured; skipping integration tests."
+            exit 0
+          fi
+          npm run test:integration
