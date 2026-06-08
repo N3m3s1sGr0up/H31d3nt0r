@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
+  integration:
+    needs: unit
+    runs-on: ubuntu-latest
+    if: secrets.CURSOR_API_KEY != ''
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - run: npm ci
+      - run: npm run test:integration
+        env:
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+          BRIDGE_API_KEY: ${{ secrets.BRIDGE_API_KEY || 'ci-bridge-key-not-for-production' }}
