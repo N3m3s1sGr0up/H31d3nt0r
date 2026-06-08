@@ -7,6 +7,7 @@ import type { Context, Hono } from "hono";
 import type { Semaphore, SemaphoreLease } from "../../concurrency.js";
 import type { CursorClient, OpenAiToolBridgeInput } from "../../cursor/client.js";
 import { normalizeCursorModelId } from "../../cursor/client.js";
+import { resolveAllowedWorkspaceCwd } from "../../cursor/workspace-allowlist.js";
 import type { Config } from "../../config.js";
 import type { ParsedChatCompletionRequest } from "../../openai/chat-normalize.js";
 import {
@@ -40,17 +41,15 @@ import {
   collectToolNames,
   parseBridgeToolJsonFromAssistantText,
 } from "../../openai/tool-bridge.js";
-import type { OpenAIChatCompletion, OpenAIToolCall } from "../../openai/types.js";
+import type { OpenAIChatCompletion, OpenAIChatCompletionUsage, OpenAIToolCall } from "../../openai/types.js";
+import { estimateChatCompletionUsage } from "../../openai/usage-estimate.js";
 import type { ChatUpstreamConfig } from "../../openai/upstream-proxy.js";
 import { upstreamOpenAiCompatibleFetch, wantsUpstreamInference } from "../../openai/upstream-proxy.js";
 import { tryRequestId } from "../../request-id.js";
 import { withTimeout } from "../../with-timeout.js";
 
-const CURSOR_DUMMY_USAGE = {
-  prompt_tokens: 0,
-  completion_tokens: 0,
-  total_tokens: 0,
-} as const;
+const WORKSPACE_CWD_HEADER = "x-bridge-workspace-cwd";
+
 
 export interface ChatCompletionsRouteDeps {
   readonly config: Config;
@@ -67,6 +66,26 @@ function newChatCompletionId(): string {
 function toolBridgeFromParsed(parsed: ParsedChatCompletionRequest): OpenAiToolBridgeInput | undefined {
   if (!parsed.tools || parsed.tools.length === 0) return undefined;
   return { tools: parsed.tools, toolChoice: parsed.tool_choice };
+}
+
+function resolveRequestWorkspaceCwd(
+  c: Context,
+  cfg: Config,
+): { cwdOverride?: string } | Response {
+  const header = c.req.header(WORKSPACE_CWD_HEADER)?.trim();
+  if (header === undefined || header.length === 0) {
+    return {};
+  }
+  const resolved = resolveAllowedWorkspaceCwd(header, cfg);
+  if (resolved === null) {
+    return respondWithError(
+      c,
+      badRequest(
+        "X-Bridge-Workspace-Cwd must point to an existing directory under an allowed workspace root.",
+      ),
+    );
+  }
+  return { cwdOverride: resolved };
 }
 
 export function registerChatCompletionsRoute(
@@ -101,6 +120,9 @@ export function registerChatCompletionsRoute(
       return handleUpstreamProxy(c, body, deps.agentSemaphore, deps.config.chatUpstream);
     }
 
+    const workspace = resolveRequestWorkspaceCwd(c, deps.config);
+    if (workspace instanceof Response) return workspace;
+
     const cursorModel = normalizeCursorModelId(body.model);
     const bridgeMessages = normalizedToBridgeMessages(body.messages);
 
@@ -114,6 +136,7 @@ export function registerChatCompletionsRoute(
         idGen,
         deps.agentSemaphore,
         deps.config,
+        workspace.cwdOverride,
       );
     }
 
@@ -128,6 +151,7 @@ export function registerChatCompletionsRoute(
       now(),
       deps.agentSemaphore,
       deps.config,
+      workspace.cwdOverride,
     );
   });
 }
@@ -250,6 +274,7 @@ function makeChatCompletion(
   model: string,
   assistant: { content: string | null; tool_calls?: readonly OpenAIToolCall[] },
   createdSec: number,
+  usage: OpenAIChatCompletionUsage,
 ): OpenAIChatCompletion {
   const hasTools =
     assistant.tool_calls !== undefined && assistant.tool_calls.length > 0;
@@ -269,7 +294,7 @@ function makeChatCompletion(
         finish_reason: hasTools ? "tool_calls" : "stop",
       },
     ],
-    usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+    usage,
   };
 }
 
@@ -294,13 +319,14 @@ async function handleNonStreaming(
   createdSec: number,
   sem: Semaphore | undefined,
   cfg: Config,
+  cwdOverride?: string,
 ): Promise<Response> {
   const acquired = acquireOrReject(c, sem);
   if (acquired instanceof Response) return acquired;
   try {
     const bridgeInput = toolBridgeFromParsed(parsed);
     const result = await withTimeout(
-      client.chatComplete(messages, model, bridgeInput),
+      client.chatComplete(messages, model, bridgeInput, cwdOverride),
       cfg.chatCompletionTimeoutMs,
       "non_stream_chat_complete",
     );
@@ -308,7 +334,8 @@ async function handleNonStreaming(
       return respondWithError(c, runFailed(`Cursor run failed (id=${result.id}).`));
     }
     const assistant = parseAssistantFromRun(parsed, result.result ?? "");
-    const completion = makeChatCompletion(completionId, model, assistant, createdSec);
+    const usage = estimateChatCompletionUsage(parsed, assistant);
+    const completion = makeChatCompletion(completionId, model, assistant, createdSec, usage);
     if (result.status === "cancelled") {
       return c.json({ ...completion, status: "cancelled" });
     }
@@ -329,6 +356,7 @@ async function handleStreaming(
   idGen: () => string,
   sem: Semaphore | undefined,
   cfg: Config,
+  cwdOverride?: string,
 ): Promise<Response> {
   const acquired = acquireOrReject(c, sem);
   if (acquired instanceof Response) return acquired;
@@ -340,7 +368,7 @@ async function handleStreaming(
   let handle;
   try {
     handle = await withTimeout(
-      client.openStreamingChat(messages, model, bridgeInput),
+      client.openStreamingChat(messages, model, bridgeInput, cwdOverride),
       cfg.sdkStreamingConnectTimeoutMs,
       "streaming_chat_sdk_connect",
     );
@@ -458,7 +486,10 @@ async function handleStreaming(
     };
 
     const finalizeSuccessfulStream = async (result: RunResult): Promise<void> => {
-      const dummyUsage = includeUsageDummy ? CURSOR_DUMMY_USAGE : undefined;
+      const streamUsage = (assistant: ReturnType<typeof parseAssistantFromRun>): OpenAIChatCompletionUsage | undefined => {
+        if (!includeUsageDummy) return undefined;
+        return estimateChatCompletionUsage(parsed, assistant);
+      };
       if (result.status === "error") {
         const remaining = finalText(result, tracker);
         if (bufferTools) {
@@ -468,13 +499,14 @@ async function handleStreaming(
           if (parsedAssistant.tool_calls?.length) {
             await out.write(sseEvent(toolCallsDeltaChunk(ctx, [...parsedAssistant.tool_calls])));
           }
-          await out.write(sseEvent(terminalChunk(ctx, finishReasonFor(parsedAssistant), dummyUsage)));
+          await out.write(sseEvent(terminalChunk(ctx, finishReasonFor(parsedAssistant), streamUsage(parsedAssistant))));
         } else {
           if (remaining.length > tracker.current().length) {
             const delta = remaining.slice(tracker.current().length);
             await out.write(sseEvent(contentChunk(ctx, delta)));
           }
-          await out.write(sseEvent(terminalChunk(ctx, "stop", dummyUsage)));
+          const assistant = parseAssistantFromRun(parsed, remaining);
+          await out.write(sseEvent(terminalChunk(ctx, "stop", streamUsage(assistant))));
         }
       } else {
         const finalContent = finalText(result, tracker);
@@ -485,13 +517,14 @@ async function handleStreaming(
           if (parsedAssistant.tool_calls?.length) {
             await out.write(sseEvent(toolCallsDeltaChunk(ctx, [...parsedAssistant.tool_calls])));
           }
-          await out.write(sseEvent(terminalChunk(ctx, finishReasonFor(parsedAssistant), dummyUsage)));
+          await out.write(sseEvent(terminalChunk(ctx, finishReasonFor(parsedAssistant), streamUsage(parsedAssistant))));
         } else {
           if (finalContent.length > tracker.current().length) {
             const delta = finalContent.slice(tracker.current().length);
             await out.write(sseEvent(contentChunk(ctx, delta)));
           }
-          await out.write(sseEvent(terminalChunk(ctx, "stop", dummyUsage)));
+          const assistant = parseAssistantFromRun(parsed, finalContent);
+          await out.write(sseEvent(terminalChunk(ctx, "stop", streamUsage(assistant))));
         }
       }
       await out.write(SSE_DONE);

@@ -5,18 +5,7 @@ import type { OpenAIChatToolDefinition, OpenAIToolCall } from "./types.js";
 /** Token before JSON payload; model output must end with this token then `{"tool_calls":[...]}`. */
 export const BRIDGE_TOOL_JSON_TOKEN = "OPENAI_COMPAT_TOOL_JSON ";
 
-export function collectToolNames(
-  tools: readonly OpenAIChatToolDefinition[] | undefined,
-): Set<string> {
-  const names = new Set<string>();
-  if (!tools) return names;
-  for (const t of tools) {
-    if (t.type !== "function") continue;
-    const n = t.function?.name;
-    if (typeof n === "string" && n.length > 0) names.add(n);
-  }
-  return names;
-}
+const TOKEN_BASE = "OPENAI_COMPAT_TOOL_JSON";
 
 function toolChoiceInstruction(toolChoice: unknown, tokenLabel: string): string {
   if (toolChoice === undefined || toolChoice === null) return "";
@@ -52,16 +41,27 @@ export function buildOpenAiToolBridgeAppendage(
   const tokenLabel = "OPENAI_COMPAT_TOOL_JSON";
   const choiceHint = toolChoiceInstruction(toolChoice, tokenLabel);
   const serialized = JSON.stringify(tools, null, 0);
+  const names = collectToolNames(tools);
+  const memoryExample =
+    names.has("memory")
+      ? `Example (memory): ${tokenLabel} {"tool_calls":[{"id":"call_mem","type":"function","function":{"name":"memory","arguments":"{\\"action\\":\\"add\\",\\"target\\":\\"user\\",\\"content\\":\\"…\\"}"}}]}`
+      : "";
   return [
     "---",
     "OpenAI-compatible tools bridge (extension)",
-    "The HTTP client listed function tools below. Cursor runs with its own built-in tools; this block is for OpenAI-compatible round-trips.",
-    "When you want the HTTP client to execute a registered function, append a single final line to your reply after any user-visible text:",
-    `Line format: ${tokenLabel} <JSON object>`,
-    'The JSON object must be: {"tool_calls":[{"id":"call_…","type":"function","function":{"name":"<exact name from list>","arguments":"<JSON string of args per OpenAI>"}}]}',
-    "`arguments` must be a string containing minified JSON (OpenAI function calling), not a raw object.",
-    `Use only \`name\` values that appear in the tool list. If you are not requesting client-side tools, omit the ${tokenLabel} line entirely.`,
+    "IMPORTANT — registered client tools take precedence over Cursor SDK native tools (Shell, Grep, Read, patch, etc.).",
+    "When you need any function from the tool list below, invoke it ONLY via the line protocol below — do NOT call Cursor SDK equivalents.",
+    "The HTTP client executes registered tools client-side (memory, skill_view, terminal, patch, and similar). They only work when you emit OPENAI_COMPAT_TOOL_JSON.",
+    "Do NOT claim client-registered tools are unavailable. If the function appears in the tool list, append the line protocol.",
+    "When you want the HTTP client to execute a registered function, append one final line after user-visible text:",
+    `Format: ${tokenLabel} <JSON object>`,
+    'JSON shape: {"tool_calls":[{"id":"call_…","type":"function","function":{"name":"<name from list>","arguments":"<JSON string>"}}]}',
+    "`arguments` must be a minified JSON string (OpenAI function calling), not a raw object.",
+    `Use only names from the tool list. Omit the ${tokenLabel} line when no client-side tools are needed.`,
+    "Do not wrap the JSON in markdown fences or code blocks — emit the raw line only.",
+    "Clients that cannot rely on model-emitted lines should use BRIDGE_CHAT_UPSTREAM_MODE=tools instead.",
     choiceHint,
+    memoryExample,
     "",
     "Tool definitions (JSON):",
     serialized,
@@ -85,6 +85,57 @@ function normalizeArguments(args: unknown): string {
   }
 }
 
+function extractBalancedJsonObject(candidate: string): string | null {
+  const start = candidate.indexOf("{");
+  if (start === -1) return null;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start; i < candidate.length; i++) {
+    const ch = candidate[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+    if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0) return candidate.slice(start, i + 1);
+    }
+  }
+  return null;
+}
+
+function locateTokenPayload(fullText: string): { visible: string; jsonCandidate: string } | null {
+  const idx = fullText.lastIndexOf(TOKEN_BASE);
+  if (idx === -1) return null;
+
+  const visible = fullText.slice(0, idx).trimEnd();
+  const remainder = fullText.slice(idx + TOKEN_BASE.length).trim();
+  if (remainder.length === 0) return null;
+  return { visible, jsonCandidate: remainder };
+}
+
+function parseToolJsonCandidate(candidate: string): unknown {
+  try {
+    return JSON.parse(candidate) as unknown;
+  } catch {
+    const balanced = extractBalancedJsonObject(candidate);
+    if (balanced === null) return undefined;
+    try {
+      return JSON.parse(balanced) as unknown;
+    } catch {
+      return undefined;
+    }
+  }
+}
+
 /**
  * Parses assistant text for `OPENAI_COMPAT_TOOL_JSON` and validates tool names.
  */
@@ -92,18 +143,15 @@ export function parseBridgeToolJsonFromAssistantText(
   fullText: string,
   allowedNames: Set<string>,
 ): { content: string | null; tool_calls?: OpenAIToolCall[] } {
-  const j = fullText.lastIndexOf(BRIDGE_TOOL_JSON_TOKEN);
-  if (j === -1) {
+  const located = locateTokenPayload(fullText);
+  if (located === null) {
     const t = fullText.trimEnd();
     return { content: t.length > 0 ? t : null };
   }
 
-  const visible = fullText.slice(0, j).trimEnd();
-  const rest = fullText.slice(j + BRIDGE_TOOL_JSON_TOKEN.length).trim();
-  let data: unknown;
-  try {
-    data = JSON.parse(rest) as unknown;
-  } catch {
+  const { visible, jsonCandidate } = located;
+  const data = parseToolJsonCandidate(jsonCandidate);
+  if (data === undefined) {
     return { content: fullText.trimEnd().length > 0 ? fullText.trimEnd() : null };
   }
   if (data === null || typeof data !== "object" || Array.isArray(data)) {
@@ -142,4 +190,17 @@ export function parseBridgeToolJsonFromAssistantText(
     content: visible.length > 0 ? visible : null,
     tool_calls: out,
   };
+}
+
+export function collectToolNames(
+  tools: readonly OpenAIChatToolDefinition[] | undefined,
+): Set<string> {
+  const names = new Set<string>();
+  if (!tools) return names;
+  for (const t of tools) {
+    if (t.type !== "function") continue;
+    const n = t.function?.name;
+    if (typeof n === "string" && n.length > 0) names.add(n);
+  }
+  return names;
 }

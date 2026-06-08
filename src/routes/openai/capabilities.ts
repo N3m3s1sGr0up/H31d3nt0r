@@ -25,6 +25,7 @@ export function registerCapabilitiesRoute(
     const cwd = config.workspaceCwd;
     const meta = bridgeReleaseMetadata();
     return c.json({
+      suggested_base_url: `http://${config.host}:${config.port}/v1`,
       bridge_version: meta.version,
       bridge_generation_notes: [...meta.generationChangelog],
       bridge_generation: config.bridgeGeneration,

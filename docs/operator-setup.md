@@ -37,7 +37,9 @@ Production bundle:
 
 ```bash
 npm run build
-npm start
+./start.sh          # or: npm start
+./start.sh status   # PID + /health
+./start.sh stop     # SIGTERM listener on configured port
 ```
 
 By default the gateway listens on `http://127.0.0.1:8787`.
@@ -51,7 +53,29 @@ curl -s http://127.0.0.1:8787/v1/models \
   -H "Authorization: Bearer $BRIDGE_API_KEY" | jq .
 ```
 
-## 5. systemd (optional)
+## 5. Autostart
+
+### macOS (LaunchAgent)
+
+Install login autostart (survives reboot; Node loads `.env.local` via `loadConfig()`):
+
+```bash
+npm run build
+./start.sh install-autoboot
+./start.sh status
+```
+
+Remove autostart:
+
+```bash
+./start.sh uninstall-autoboot
+```
+
+- **Stop until next login:** `./start.sh stop` (boots out the launchd job; plist remains for next login).
+- **Start after stop:** `./start.sh start` (re-bootstraps launchd when the plist is installed).
+- **Logs:** `logs/launchd.stdout.log` and `logs/launchd.stderr.log` under the clone root.
+
+### Linux (systemd, optional)
 
 From the clone root:
 
@@ -71,11 +95,59 @@ journalctl -u h31d3nt0r -n 30 -o cat
 
 After code or dependency updates: `npm run build && sudo systemctl restart h31d3nt0r`.
 
-## 6. Client configuration (generic)
+## 6. Client integration
 
-Point any OpenAI-compatible client at:
+**Workspace OPSEC:** The default `WORKSPACE_CWD` is this repository. That is fine for gateway development — it is **not** an engagement directory. Pentest/red-team artifacts (Kerberos `.ccache`, BloodHound exports, loot, hashes) must live under `~/ops/<engagement>/` with `WORKSPACE_CWD` pointed there for those sessions.
 
-- **Base URL:** `http://127.0.0.1:8787/v1` (must include `/v1` suffix when the client appends `/chat/completions` or `/models`.)
-- **API key:** the same value as `BRIDGE_API_KEY`.
+**What this endpoint is:** **h31d3nt0r** is a local Cursor SDK-backed gateway on loopback. Clients use an **OpenAI-compatible wire format** (not OpenAI cloud inference) on `/v1/*`. Optional `BRIDGE_CHAT_UPSTREAM_*` forwarding is advanced and off by default.
 
-Model identifiers are passed through to Cursor (optional `cursor/` or `cursor:` prefixes are stripped internally).
+**Client integration checklist** (tool-agnostic — Heremes, Open WebUI, Continue, etc.):
+
+1. **Gateway running** — `npm run dev`, `npm start`, or systemd (§3–5).
+2. **Base URL** — `http://127.0.0.1:8787/v1` (include `/v1` when the client appends `/chat/completions` or `/models`).
+3. **API key** — `BRIDGE_API_KEY` from `.env.local` (not `CURSOR_API_KEY`, not an OpenAI platform key). Many clients name the field `OPENAI_API_KEY`; use your bridge secret as the value.
+4. **Model ID** — from `GET /v1/models` (e.g. `composer-2.5` when listed). Optional `cursor/` or `cursor:` prefixes are stripped internally.
+
+**Verify:** run `npm run verify-client` (or the §4 curl checks) before pointing a client at the gateway.
+
+## 7. Troubleshooting
+
+| Symptom | Likely cause | Fix |
+|--------|--------------|-----|
+| Connection refused / Connection error (Heremes, curl) | Gateway not running | `./start.sh status` then `./start.sh` |
+| 401 Unauthorized on `/v1/*` | Wrong API key | Use `BRIDGE_API_KEY` from `.env.local`, not `CURSOR_API_KEY` or an OpenAI platform key |
+| Client URL errors / 404 on chat | Base URL missing `/v1` | Set base URL to `http://127.0.0.1:8787/v1` (or `suggested_base_url` from `GET /v1/capabilities`) |
+| `EADDRINUSE` / "address already in use" on start | Another process (often h31d3nt0r) already listening on `PORT` | `./start.sh status`; `./start.sh stop`. With autoboot installed (§5), launchd may respawn until `./start.sh stop` (bootout) or `./start.sh uninstall-autoboot` |
+| Invalid model / model not found | Client model ID not in Cursor catalog | `GET /v1/models` for canonical IDs; built-in alias `composer2-5` → `composer-2.5`. Upstream/Cursor errors may also mean account or model access |
+| `GET /ready` returns 503 | Cursor cloud readiness probe failed | Unlike `/health` (liveness only). Check `CURSOR_API_KEY`, network, `BRIDGE_CURSOR_READY_MS`; set `BRIDGE_CURSOR_READY_MS=0` to skip probe if only `/health` is needed |
+| Heremes "Connection error" with retries | Client polling before gateway is ready | Run `npm run verify-client` first; confirm autoboot finished (`./start.sh status`); base URL includes `/v1`; client not pointed at wrong `PORT` |
+
+**Quick diagnose:** `npm run verify-client` prints checklist hints and fails fast when the port is closed.
+
+**Model typos:** clients may send `composer2-5`; the gateway normalizes that to `composer-2.5` internally. Canonical IDs still come from `GET /v1/models`.
+
+## 8. Debug request logging
+
+Set `BRIDGE_DEBUG_REQUESTS=1` in `.env.local` (or export before `npm run dev`) to log one JSON line per `/v1/*` request on stderr:
+
+```json
+{"type":"bridge.request","request_id":"req_…","method":"POST","path":"/v1/chat/completions","status":200,"duration_ms":42,"model":"composer-2"}
+```
+
+Logs include route, status, duration, and model when present. They never include `Authorization`, message bodies, or `CURSOR_API_KEY`.
+
+## 9. Integration tests
+
+Offline by default:
+
+```bash
+npm test
+```
+
+Live Cursor probe (requires `.env.local` with `CURSOR_API_KEY` and `BRIDGE_API_KEY`):
+
+```bash
+npm run test:integration
+```
+
+CI runs unit tests on every push; the integration job runs only when `CURSOR_API_KEY` is configured as a repository secret.

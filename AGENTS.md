@@ -1,6 +1,6 @@
 # AGENTS.md — H31d3nt0r
 
-Contract for **agents calling this gateway** (OpenAI-compatible HTTP) and **agents modifying its source**.
+Contract for **agents calling this gateway** (OpenAI-compatible HTTP wire format on `/v1/*`; default inference backend is Cursor SDK local) and **agents modifying its source**.
 
 ## For agents calling the gateway
 
@@ -19,6 +19,10 @@ Contract for **agents calling this gateway** (OpenAI-compatible HTTP) and **agen
 
 - **Upstream proxy:** `BRIDGE_CHAT_UPSTREAM_*` POSTs verbatim to OpenAI-compatible `/v1/chat/completions` for native structured `tool_calls`.
 - **Cursor path:** Inject tool definitions into prompts; optionally parse **`OPENAI_COMPAT_TOOL_JSON`** on assistant text (`src/openai/tool-bridge.ts`). See **`docs/reference/openai-extensions.md`**.
+
+### Workspace OPSEC
+
+This repo is the **gateway**, not an engagement workspace. Pentest/red-team output (Kerberos `.ccache`, BloodHound zips, loot, hashes, keytabs, dumps) must **never** land here — use `~/ops/<engagement>/` outside the repo. Agents receive the same rules via injected bridge context (`src/cursor/bridge-context.ts`).
 
 ### Gateway rules
 

@@ -2,6 +2,7 @@
 node_modules/
 dist/
 *.log
+logs/
 npm-debug.log*
 
 # Secrets
@@ -14,8 +15,3 @@ npm-debug.log*
 Thumbs.db
 .vscode/
 .idea/
-
-# Cursor SDK working directory (runtime artifacts; keep only tracked stubs)
-hermes-workspace/*
-!hermes-workspace/.gitkeep
-!hermes-workspace/context.md

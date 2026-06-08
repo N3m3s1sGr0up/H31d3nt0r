@@ -21,6 +21,7 @@ const KEYS_TO_RESET = [
   "BRIDGE_CHAT_UPSTREAM_API_KEY",
   "OPENAI_API_KEY",
   "BRIDGE_CHAT_UPSTREAM_MS",
+  "BRIDGE_DEBUG_REQUESTS",
 ];
 
 describe("loadConfig", () => {
@@ -70,6 +71,15 @@ describe("loadConfig", () => {
     expect(cfg.workspaceCwd).toEqual(SERVICE_ROOT);
     expect(cfg.localSettingSources).toEqual(["project", "user"]);
     expect(cfg.chatUpstream.mode).toBe("off");
+    expect(cfg.debugRequests).toBe(false);
+  });
+
+  it("enables debug request logging when BRIDGE_DEBUG_REQUESTS=1", () => {
+    process.env.CURSOR_API_KEY = "cursor-secret";
+    process.env.BRIDGE_API_KEY = "bridge-secret";
+    process.env.BRIDGE_DEBUG_REQUESTS = "1";
+    const cfg = loadConfig({ dotEnvPath: path.join(tmp, "noop") });
+    expect(cfg.debugRequests).toBe(true);
   });
 
   it("merges BRIDGE_EXTRA_CWD as a second workspace root", () => {

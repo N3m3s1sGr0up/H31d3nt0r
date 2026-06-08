@@ -49,6 +49,8 @@ export interface Config {
    * proxying chat upstream. Cursor remains the fallback when mode is off.
    */
   readonly chatUpstream: ChatUpstreamConfig;
+  /** When true, emit structured JSON request logs on stderr (`BRIDGE_DEBUG_REQUESTS=1`). */
+  readonly debugRequests: boolean;
 }
 
 export const SERVICE_ROOT = path.resolve(
@@ -181,6 +183,12 @@ function parseChatUpstreamMode(raw: string | undefined): ChatUpstreamMode {
   );
 }
 
+function parseDebugRequests(raw: string | undefined): boolean {
+  if (raw === undefined || raw.trim().length === 0) return false;
+  const token = raw.trim().toLowerCase();
+  return token === "1" || token === "true" || token === "yes";
+}
+
 function parseChatUpstreamConfig(): ChatUpstreamConfig {
   const mode = parseChatUpstreamMode(process.env.BRIDGE_CHAT_UPSTREAM_MODE);
   const rawUrl = process.env.BRIDGE_CHAT_UPSTREAM_URL?.trim();
@@ -248,5 +256,6 @@ export function loadConfig(options: LoadConfigOptions = {}): Config {
       15_000,
     ),
     chatUpstream: parseChatUpstreamConfig(),
+    debugRequests: parseDebugRequests(process.env.BRIDGE_DEBUG_REQUESTS),
   };
 }

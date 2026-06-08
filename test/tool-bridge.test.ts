@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   BRIDGE_TOOL_JSON_TOKEN,
+  buildOpenAiToolBridgeAppendage,
   collectToolNames,
   parseBridgeToolJsonFromAssistantText,
 } from "../src/openai/tool-bridge.js";
@@ -25,10 +26,78 @@ describe("tool-bridge", () => {
     expect(out.tool_calls?.[0]?.function.name).toBe("ping");
   });
 
+  it("tolerates extra whitespace between token and JSON", () => {
+    const raw = `Reply\nOPENAI_COMPAT_TOOL_JSON   \n  {"tool_calls":[{"id":"c1","type":"function","function":{"name":"ping","arguments":"{}"}}]}`;
+    const out = parseBridgeToolJsonFromAssistantText(raw, new Set(["ping"]));
+    expect(out.content).toBe("Reply");
+    expect(out.tool_calls).toHaveLength(1);
+  });
+
+  it("parses token on last non-empty line when trailing blank lines follow", () => {
+    const payload = JSON.stringify({
+      tool_calls: [{ id: "c1", type: "function", function: { name: "ping", arguments: "{}" } }],
+    });
+    const raw = `Visible\n${BRIDGE_TOOL_JSON_TOKEN}${payload}\n\n\n`;
+    const out = parseBridgeToolJsonFromAssistantText(raw, new Set(["ping"]));
+    expect(out.content).toBe("Visible");
+    expect(out.tool_calls).toHaveLength(1);
+  });
+
+  it("recovers JSON when trailing garbage follows the object on the token line", () => {
+    const payload = `{"tool_calls":[{"id":"c1","type":"function","function":{"name":"ping","arguments":"{}"}}]}`;
+    const raw = `Hi\nOPENAI_COMPAT_TOOL_JSON ${payload} trailing-garbage`;
+    const out = parseBridgeToolJsonFromAssistantText(raw, new Set(["ping"]));
+    expect(out.content).toBe("Hi");
+    expect(out.tool_calls).toHaveLength(1);
+  });
+
   it("drops tool_calls with names not in the allowlist", () => {
     const raw = `x\n${BRIDGE_TOOL_JSON_TOKEN}{"tool_calls":[{"id":"c1","type":"function","function":{"name":"evil","arguments":"{}"}}]}`;
     const out = parseBridgeToolJsonFromAssistantText(raw, new Set(["good"]));
     expect(out.tool_calls).toBeUndefined();
     expect(out.content).toBe("x");
+  });
+
+  it("returns text-only response when tool_calls array is empty", () => {
+    const raw = `Only text\n${BRIDGE_TOOL_JSON_TOKEN}{"tool_calls":[]}`;
+    const out = parseBridgeToolJsonFromAssistantText(raw, new Set(["ping"]));
+    expect(out.tool_calls).toBeUndefined();
+    expect(out.content).toBe("Only text");
+  });
+
+  it("preserves content without tool_calls when JSON after token is malformed", () => {
+    const raw = `Keep me\n${BRIDGE_TOOL_JSON_TOKEN}{not valid json`;
+    const out = parseBridgeToolJsonFromAssistantText(raw, new Set(["ping"]));
+    expect(out.tool_calls).toBeUndefined();
+    expect(out.content).toBe(`Keep me\n${BRIDGE_TOOL_JSON_TOKEN}{not valid json`);
+  });
+
+  it("buildOpenAiToolBridgeAppendage warns against markdown fences", () => {
+    const append = buildOpenAiToolBridgeAppendage(
+      [{ type: "function", function: { name: "ping" } }],
+      undefined,
+    );
+    expect(append).toContain("Do not wrap");
+    expect(append).toContain("markdown");
+    expect(append).toContain("BRIDGE_CHAT_UPSTREAM_MODE=tools");
+  });
+
+  it("buildOpenAiToolBridgeAppendage includes memory example when memory is registered", () => {
+    const append = buildOpenAiToolBridgeAppendage(
+      [{ type: "function", function: { name: "memory" } }],
+      undefined,
+    );
+    expect(append).toContain('"name":"memory"');
+    expect(append).toContain("action");
+  });
+
+  it("buildOpenAiToolBridgeAppendage prioritizes client tools over Cursor SDK natives", () => {
+    const append = buildOpenAiToolBridgeAppendage(
+      [{ type: "function", function: { name: "memory" } }],
+      undefined,
+    );
+    expect(append).toContain("take precedence over Cursor SDK native tools");
+    expect(append).toContain("Do NOT claim client-registered tools are unavailable");
+    expect(append).toContain("ONLY via the line protocol");
   });
 });
