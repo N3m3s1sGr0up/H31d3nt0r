@@ -8,6 +8,8 @@
 
 Its `/v1/*` routes are fully OpenAI-compatible at the protocol level, acting as a drop-in endpoint for any tool — from terminals to IDEs to creative automation — that can send standard OpenAI JSON with Bearer authentication. While it comes wired for [`@cursor/sdk`](https://cursor.com/docs/sdk/typescript), the architecture is purposefully stack-agnostic: the only requirement is a valid Cursor subscription powering the backend. The result: a universal "heathens' gate" that enables cursor subscription for any OpenAI-compatible client, via your own compute and your own API key.
 
+This gateway was built for and tested on Hermes Agent. But can easily be modified to fit your needs.
+
 Bindings default to **127.0.0.1** only.
 
 ## Layout
