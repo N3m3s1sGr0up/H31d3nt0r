@@ -157,13 +157,17 @@ Live Cursor probe (requires `.env.local` with `CURSOR_API_KEY` and `BRIDGE_API_K
 npm run test:integration
 ```
 
-CI runs unit tests on every push; the integration job runs only when `CURSOR_API_KEY` is configured as a repository secret.
+Run `npm run version:verify` before tagging if you changed version fields manually.
 
 ## 10. Releases
 
-- **Local:** `npm run version:bump -- <semver> "<note>"` then `npm run version:verify`, `npm test`, commit.
-- **GitHub:** Actions → **Bump version** (requires the `release` environment with reviewers configured in repo settings).
+```bash
+npm run version:bump -- <semver> "<note>"
+npm run version:verify && npm run typecheck && npm test
+git add package.json package-lock.json src/bridge-metadata.ts
+git commit -m "chore: release v<semver>"
+git tag v<semver>
+git push origin main --tags
+```
 
-The bump workflow only runs on `main`, uses concurrency locking, and refuses duplicate tags.
-
-**GitHub Actions pinning:** workflow `uses:` entries are pinned to full commit SHAs (not `@v4` tags). Run `npm run actions:verify` locally before editing workflows. Dependabot opens weekly PRs to refresh action SHAs (`.github/dependabot.yml`).
+The bump script refuses semver downgrades and duplicate tags already on `origin`.

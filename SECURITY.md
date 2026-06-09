@@ -20,7 +20,7 @@ Report privately via one of:
 
 Include:
 
-- Affected component (gateway routes, scripts, CI workflow, etc.)
+- Affected component (gateway routes, scripts, release tooling, etc.)
 - Steps to reproduce
 - Impact assessment (confidentiality, integrity, availability)
 - Suggested fix, if you have one
