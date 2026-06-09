@@ -1,7 +1,7 @@
 import type { OpenAIToolCall } from "../openai/types.js";
 
 export interface BridgeSystemContextOptions {
-  /** Hermes/OpenAI client sent `tools[]` — client-side execution via OPENAI_COMPAT_TOOL_JSON. */
+  /** OpenAI-compatible client sent `tools[]` — client-side execution via OPENAI_COMPAT_TOOL_JSON. */
   readonly clientToolsRegistered?: boolean;
 }
 
@@ -35,7 +35,7 @@ export function buildBridgeSystemContext(
 
   if (options.clientToolsRegistered) {
     return [
-      "You are running through an OpenAI-compatible HTTP gateway (Hermes-style client) backed by the Cursor SDK.",
+      "You are running through an OpenAI-compatible HTTP gateway backed by the Cursor SDK.",
       "The HTTP client registered OpenAI function tools (memory, skills, terminal, etc.) in the bridge section below.",
       "",
       "CRITICAL — client tool execution:",

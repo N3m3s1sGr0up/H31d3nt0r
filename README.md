@@ -12,6 +12,8 @@ This gateway was built for and tested on Hermes Agent. But can easily be modifie
 
 Bindings default to **127.0.0.1** only.
 
+**Platform:** H31d3nt0r was built on and for **macOS** — launchd autoboot, `start.sh`, and operator docs assume a Mac-first workflow. Linux (systemd) paths are included for portability but are secondary and less tested.
+
 ## Layout
 
 ```
@@ -98,3 +100,8 @@ Loopback-only by default, `.env.local` never committed (`CURSOR_API_KEY` stays s
 
 - [Cursor TypeScript SDK](https://cursor.com/docs/sdk/typescript)
 - [AGENTS.md](AGENTS.md) — conventions for callers + maintainers.
+- [SECURITY.md](SECURITY.md) — vulnerability reporting.
+
+## License
+
+MIT — see [LICENSE](LICENSE).

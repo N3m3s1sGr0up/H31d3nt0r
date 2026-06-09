@@ -2,7 +2,7 @@ import type { ParsedChatCompletionRequest } from "./chat-normalize.js";
 import { stringifyNormalizedContent } from "./chat-normalize.js";
 import type { OpenAIChatCompletionUsage } from "./types.js";
 
-/** ~4 chars/token — matches Hermes preflight heuristics for consistent context bars. */
+/** ~4 chars/token — common preflight heuristic for OpenAI-compatible client context bars. */
 export function estimateTextTokensRough(text: string): number {
   if (text.length === 0) return 0;
   return Math.ceil(text.length / 4);
@@ -47,7 +47,7 @@ function assistantOutputText(assistant: {
   return parts.join("\n");
 }
 
-/** Best-effort usage for clients (Hermes context bar) when Cursor SDK omits real counts. */
+/** Best-effort usage for OpenAI-compatible clients when Cursor SDK omits real counts. */
 export function estimateChatCompletionUsage(
   parsed: ParsedChatCompletionRequest,
   assistant: {

@@ -7,7 +7,7 @@ import { SERVICE_ROOT } from "./config.js";
  * Human-readable notes for `bridgeGeneration` / health `changelog` — keep short.
  */
 export const BRIDGE_GENERATION_CHANGELOG: readonly string[] = [
-  "v0.3.0: operator hardening for Hermes deployments, GitHub CI (unit + gated Cursor integration), version bump/verify tooling, transitive dependency security overrides, README branding.",
+  "v0.3.0: operator hardening for OpenAI-compatible client integrations, GitHub CI (unit + gated Cursor integration), version bump/verify tooling, transitive dependency security overrides, README branding.",
   "v0.2.0: public OpenAI-first branding — service id `h31d3nt0r`, `OPENAI_COMPAT_TOOL_JSON` tool line, optional `BRIDGE_EXTRA_CWD` instead of implicit second homedir; capabilities field `extra_workspace_cwd`.",
   "v0.1.3: upstream OpenAI-compat chat proxy (BRIDGE_CHAT_UPSTREAM_*), GET /v1/models/:id, chat normalization (developer, multimodal, tool_call_id), SSE usage stub for stream_options.include_usage, structured errors expose OpenAI type/param mirrors alongside bridge codes.",
   "v0.1.1: timeouts (non-stream + stream wall-clock + SDK connect), SSE comment heartbeats, structured SSE bridge.error payloads, GET /ready (Cursor probe), health reports version + changelog.",

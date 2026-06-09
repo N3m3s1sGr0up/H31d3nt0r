@@ -1,5 +1,5 @@
 /**
- * HTTP client smoke test for integrators (Heremes-style OpenAI-compatible clients).
+ * HTTP client smoke test for integrators (OpenAI-compatible clients).
  *
  * Pass criteria:
  *   - Exit 0 and stdout contains the literal token `CLIENT_OK`.

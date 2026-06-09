@@ -20,7 +20,7 @@ describe("bridge context", () => {
     expect(ctx).toContain("do not substitute Cursor SDK native tools");
   });
 
-  it("uses client-tools mode when Hermes registers tools", () => {
+  it("uses client-tools mode when the HTTP client registers tools", () => {
     const ctx = buildBridgeSystemContext(
       { repoRoot: "/repo" },
       { clientToolsRegistered: true },

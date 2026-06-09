@@ -15,3 +15,10 @@ npm-debug.log*
 Thumbs.db
 .vscode/
 .idea/
+
+# Compound Engineering / ce-* local agent artifacts
+docs/brainstorms/
+docs/plans/
+docs/ideation/
+docs/solutions/
+.context/

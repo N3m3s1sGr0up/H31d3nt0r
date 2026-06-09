@@ -107,7 +107,7 @@ After code or dependency updates: `npm run build && sudo systemctl restart h31d3
 
 **What this endpoint is:** **h31d3nt0r** is a local Cursor SDK-backed gateway on loopback. Clients use an **OpenAI-compatible wire format** (not OpenAI cloud inference) on `/v1/*`. Optional `BRIDGE_CHAT_UPSTREAM_*` forwarding is advanced and off by default.
 
-**Client integration checklist** (tool-agnostic — Heremes, Open WebUI, Continue, etc.):
+**Client integration checklist** (tool-agnostic — Open WebUI, Continue, custom automation, etc.):
 
 1. **Gateway running** — `npm run dev`, `npm start`, or systemd (§3–5).
 2. **Base URL** — `http://127.0.0.1:8787/v1` (include `/v1` when the client appends `/chat/completions` or `/models`).
@@ -120,14 +120,14 @@ After code or dependency updates: `npm run build && sudo systemctl restart h31d3
 
 | Symptom | Likely cause | Fix |
 |--------|--------------|-----|
-| Connection refused / Connection error (Heremes, curl) | Gateway not running | `./start.sh status` then `./start.sh` |
+| Connection refused / Connection error (OpenAI-compatible client, curl) | Gateway not running | `./start.sh status` then `./start.sh` |
 | 401 Unauthorized on `/v1/*` | Wrong API key | Use `BRIDGE_API_KEY` from `.env.local`, not `CURSOR_API_KEY` or an OpenAI platform key |
 | Client URL errors / 404 on chat | Base URL missing `/v1` | Set base URL to `http://127.0.0.1:8787/v1` (or `suggested_base_url` from `GET /v1/capabilities`) |
 | `EADDRINUSE` / "address already in use" on start | Another process (often h31d3nt0r) already listening on `PORT` | `./start.sh status`; `./start.sh stop`. With autoboot installed (§5), launchd may respawn until `./start.sh stop` (bootout) or `./start.sh uninstall-autoboot` |
 | Invalid model / model not found | Client model ID not in Cursor catalog | `GET /v1/models` for canonical IDs; built-in alias `composer2-5` → `composer-2.5`. Upstream/Cursor errors may also mean account or model access |
 | `GET /ready` returns 503 | Cursor cloud readiness probe failed | Unlike `/health` (liveness only). Check `CURSOR_API_KEY`, network, `BRIDGE_CURSOR_READY_MS`; set `BRIDGE_CURSOR_READY_MS=0` to skip probe if only `/health` is needed |
 | `GET /ready` returns 429 | Ready probe rate limit | Default `BRIDGE_READY_RATE_LIMIT_PER_MIN=30`; raise or set `0` to disable if your orchestrator legitimately polls faster |
-| Heremes "Connection error" with retries | Client polling before gateway is ready | Run `npm run verify-client` first; confirm autoboot finished (`./start.sh status`); base URL includes `/v1`; client not pointed at wrong `PORT` |
+| Client "Connection error" with retries | Client polling before gateway is ready | Run `npm run verify-client` first; confirm autoboot finished (`./start.sh status`); base URL includes `/v1`; client not pointed at wrong `PORT` |
 
 **Quick diagnose:** `npm run verify-client` prints checklist hints and fails fast when the port is closed.
 
