@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="H31d3nt0r.png" alt="H31d3nt0r logo" width="400" />
+</p>
+
 # H31d3nt0r
 
 **h31d3nt0r** is a minimal **loopback Cursor API endpoint**: a local HTTP gateway backed by [`@cursor/sdk`](https://cursor.com/docs/sdk/typescript). Its `/v1/*` routes speak the [OpenAI Chat Completions wire format](https://platform.openai.com/docs/api-reference/chat) (`/v1/models`, `/v1/chat/completions`) so OpenAI-compatible clients can connect — that compatibility is the protocol shape, not OpenAI cloud inference. Intended for tooling that sends OpenAI-style JSON over Bearer auth; nothing else is assumed about your stack.

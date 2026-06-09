@@ -1,6 +1,6 @@
 {
   "name": "h31d3nt0r",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "Loopback HTTP gateway: OpenAI Chat Completions API in front of @cursor/sdk.",
   "type": "module",
@@ -16,7 +16,9 @@
     "dev": "tsx watch src/index.ts",
     "test": "vitest run",
     "test:integration": "RUN_CURSOR_INTEGRATION=1 vitest run",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "version:bump": "tsx src/scripts/bump-version.ts",
+    "version:verify": "tsx src/scripts/verify-version.ts"
   },
   "dependencies": {
     "@cursor/sdk": "1.0.13",

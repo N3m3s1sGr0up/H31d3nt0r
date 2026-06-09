@@ -49,6 +49,8 @@ This repo is the **gateway**, not an engagement workspace. Pentest/red-team outp
 
 | Scope | Command |
 |-------|---------|
+| Version sync | `npm run version:verify` (also enforced in CI) |
+| Release bump | `npm run version:bump -- <semver> "<note>"` or **Actions → Bump version** |
 | Types | `npm run typecheck` |
 | Unit | `npm test` |
 | Live SDK ping | `npm run verify-sdk` (requires `CURSOR_API_KEY`) |

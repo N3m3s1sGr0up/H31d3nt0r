@@ -1,0 +1,67 @@
+name: Bump version
+
+concurrency:
+  group: bump-version
+  cancel-in-progress: true
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Semver without v prefix (e.g. 0.3.1)"
+        required: true
+        type: string
+      changelog:
+        description: "Changelog note (prepended to bridge-metadata.ts)"
+        required: true
+        type: string
+
+jobs:
+  bump:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Validate inputs
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          if ! echo "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "Invalid semver: $VERSION"
+            exit 1
+          fi
+
+      - run: npm ci
+      - name: Bump version
+        env:
+          VERSION: ${{ inputs.version }}
+          CHANGELOG: ${{ inputs.changelog }}
+        run: npm run version:bump -- "$VERSION" "$CHANGELOG"
+      - run: npm run version:verify
+      - run: npm run typecheck
+      - run: npm test
+
+      - name: Commit and tag release
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json src/bridge-metadata.ts
+          git commit -m "chore: release v${VERSION}"
+          if git ls-remote --exit-code --tags origin "refs/tags/v${VERSION}" >/dev/null 2>&1; then
+            echo "Tag v${VERSION} already exists on origin"
+            exit 1
+          fi
+          git tag "v${VERSION}"
+          git push origin HEAD "refs/tags/v${VERSION}"
