@@ -448,6 +448,50 @@ describe("POST /v1/chat/completions (non-stream)", () => {
     expect(dev?.content).toContain("Be terse.");
   });
 
+  it("maps upstream HTTP errors to the bridge error envelope", async () => {
+    const fetchMock = vi.fn(async (): Promise<Response> =>
+      Promise.resolve(
+        new Response('{"error":{"message":"secret_upstream_token_abcdefghijklmnopqrstuvwxyz"}}', {
+          status: 502,
+          headers: { "content-type": "application/json" },
+        }),
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { hono } = buildApp({
+      config: {
+        ...fixtureConfig(),
+        chatUpstream: {
+          mode: "tools",
+          url: "https://upstream.example/v1/chat/completions",
+          apiKey: "sk-upstream",
+          timeoutMs: 10_000,
+        },
+      },
+      cursorClient: fakeClient({ chatComplete: vi.fn() }),
+    });
+
+    try {
+      const res = await hono.request("http://localhost/v1/chat/completions", {
+        method: "POST",
+        headers: withBearer(),
+        body: JSON.stringify({
+          model: "gpt-any",
+          messages: [{ role: "user", content: "hey" }],
+          tools: [{ type: "function", function: { name: "ping" } }],
+        }),
+      });
+      expect(res.status).toBe(502);
+      const body = (await res.json()) as { error?: { code?: string; message?: string } };
+      expect(body.error?.code).toBe("upstream_fetch_failed");
+      expect(body.error?.message).not.toContain("secret_upstream_token");
+      expect(JSON.stringify(body)).not.toContain("secret_upstream_token");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("proxies tool-enabled chat to upstream when configured", async () => {
     const upstreamJson = JSON.stringify({
       choices: [

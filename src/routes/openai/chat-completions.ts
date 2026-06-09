@@ -21,6 +21,7 @@ import {
   respondWithError,
   runFailed,
   streamUnsupported,
+  redactSecrets,
   upstreamFetchFailed,
   upstreamTimeout,
 } from "../../errors.js";
@@ -228,13 +229,21 @@ async function handleUpstreamProxy(
     const rid = fwdId ?? "";
     if (rid.length > 0) hdrs.set("X-Request-Id", rid);
 
-    if (!upstream.ok && !parsed.stream) {
+    if (!upstream.ok) {
       const text = await upstream.text();
       lease?.release();
-      return new Response(text, {
-        status: upstream.status,
-        headers: hdrs,
-      });
+      return respondWithError(
+        c,
+        upstreamFetchFailed(
+          `OpenAI-compatible upstream returned HTTP ${upstream.status}.`,
+          {
+            internalDetails: {
+              upstream_status: upstream.status,
+              upstream_body: redactSecrets(text).slice(0, 2000),
+            },
+          },
+        ),
+      );
     }
 
     const b = upstream.body;

@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -43,24 +43,24 @@ describe("resolveAllowedWorkspaceCwd", () => {
 
   it("accepts a path under WORKSPACE_CWD", () => {
     const cfg = fixtureConfig(tmp);
-    expect(resolveAllowedWorkspaceCwd(nested, cfg)).toBe(path.resolve(nested));
+    expect(resolveAllowedWorkspaceCwd(nested, cfg)).toBe(realpathSync(nested));
   });
 
   it("accepts a path equal to the workspace root", () => {
     const cfg = fixtureConfig(tmp);
-    expect(resolveAllowedWorkspaceCwd(tmp, cfg)).toBe(path.resolve(tmp));
+    expect(resolveAllowedWorkspaceCwd(tmp, cfg)).toBe(realpathSync(tmp));
   });
 
   it("accepts paths under BRIDGE_EXTRA_CWD when configured", () => {
     const underExtra = path.join(extra, "child");
     mkdirSync(underExtra, { recursive: true });
     const cfg = fixtureConfig([tmp, extra]);
-    expect(resolveAllowedWorkspaceCwd(underExtra, cfg)).toBe(path.resolve(underExtra));
+    expect(resolveAllowedWorkspaceCwd(underExtra, cfg)).toBe(realpathSync(underExtra));
   });
 
   it("accepts SERVICE_ROOT itself", () => {
     const cfg = fixtureConfig(tmp);
-    expect(resolveAllowedWorkspaceCwd(SERVICE_ROOT, cfg)).toBe(path.resolve(SERVICE_ROOT));
+    expect(resolveAllowedWorkspaceCwd(SERVICE_ROOT, cfg)).toBe(realpathSync(SERVICE_ROOT));
   });
 
   it("rejects paths outside allowed roots", () => {
@@ -72,5 +72,14 @@ describe("resolveAllowedWorkspaceCwd", () => {
   it("rejects non-existent paths", () => {
     const cfg = fixtureConfig(tmp);
     expect(resolveAllowedWorkspaceCwd(path.join(tmp, "missing-dir"), cfg)).toBeNull();
+  });
+
+  it("rejects symlinks that resolve outside allowed roots", () => {
+    const outside = mkdtempSync(path.join(tmpdir(), "ws-outside-"));
+    const link = path.join(tmp, "escape-link");
+    symlinkSync(outside, link);
+    const cfg = fixtureConfig(tmp);
+    expect(resolveAllowedWorkspaceCwd(link, cfg)).toBeNull();
+    rmSync(outside, { recursive: true, force: true });
   });
 });

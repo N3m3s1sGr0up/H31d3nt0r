@@ -64,6 +64,21 @@ describe("GET /ready", () => {
     expect(body.error?.code).toBe("internal_error");
   });
 
+  it("returns 429 when ready probe rate limit is exceeded", async () => {
+    const listModels = vi.fn(async (): Promise<SDKModel[]> => [SAMPLE_READY_MODEL]);
+    const { hono } = buildApp({
+      config: baseFixture({ cursorReadyProbeTimeoutMs: 0, readyRateLimitPerMin: 2 }),
+      cursorClient: fakeClient({ listModels }),
+    });
+
+    expect((await hono.request("http://localhost/ready")).status).toBe(200);
+    expect((await hono.request("http://localhost/ready")).status).toBe(200);
+    const limited = await hono.request("http://localhost/ready");
+    expect(limited.status).toBe(429);
+    const body = (await limited.json()) as { error?: { code?: string } };
+    expect(body.error?.code).toBe("rate_limited");
+  });
+
   it("returns 200 when listModels resolves before the deadline", async () => {
     const listModels = vi.fn(async (): Promise<SDKModel[]> => [SAMPLE_READY_MODEL]);
 

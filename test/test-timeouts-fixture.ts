@@ -17,6 +17,7 @@ export const ROUTE_TIMEOUT_DEFAULTS = {
   sseHeartbeatIntervalMs: 0,
   chatUpstream: ROUTE_CHAT_UPSTREAM_OFF,
   debugRequests: false,
+  readyRateLimitPerMin: 0,
 } satisfies Pick<
   Config,
   | "chatCompletionTimeoutMs"
@@ -25,4 +26,5 @@ export const ROUTE_TIMEOUT_DEFAULTS = {
   | "sseHeartbeatIntervalMs"
   | "chatUpstream"
   | "debugRequests"
+  | "readyRateLimitPerMin"
 >;

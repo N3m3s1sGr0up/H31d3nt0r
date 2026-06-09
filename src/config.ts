@@ -51,6 +51,11 @@ export interface Config {
   readonly chatUpstream: ChatUpstreamConfig;
   /** When true, emit structured JSON request logs on stderr (`BRIDGE_DEBUG_REQUESTS=1`). */
   readonly debugRequests: boolean;
+  /**
+   * Per-minute cap on unauthenticated GET /ready (Cursor probe budget).
+   * Zero disables rate limiting.
+   */
+  readonly readyRateLimitPerMin: number;
 }
 
 export const SERVICE_ROOT = path.resolve(
@@ -107,6 +112,17 @@ function parseMaxAgents(raw: string): number {
   const n = Number.parseInt(raw, 10);
   if (!Number.isInteger(n) || n <= 0) {
     throw new Error(`Invalid MAX_AGENTS=${raw}; expected a positive integer.`);
+  }
+  return n;
+}
+
+function parseNonNegativeInt(name: string, raw: string | undefined, fallback: number): number {
+  if (raw === undefined || raw.trim().length === 0) {
+    return fallback;
+  }
+  const n = Number.parseInt(raw, 10);
+  if (!Number.isInteger(n) || n < 0) {
+    throw new Error(`Invalid ${name}=${raw}; expected a non-negative integer.`);
   }
   return n;
 }
@@ -189,6 +205,67 @@ function parseDebugRequests(raw: string | undefined): boolean {
   return token === "1" || token === "true" || token === "yes";
 }
 
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "::1"]);
+
+function parseAllowRemoteBind(raw: string | undefined): boolean {
+  if (raw === undefined || raw.trim().length === 0) return false;
+  const token = raw.trim().toLowerCase();
+  return token === "1" || token === "true" || token === "yes";
+}
+
+function parseHost(raw: string | undefined): string {
+  const host = raw?.trim() || "127.0.0.1";
+  if (LOOPBACK_HOSTS.has(host.toLowerCase())) {
+    return host;
+  }
+  if (!parseAllowRemoteBind(process.env.BRIDGE_ALLOW_REMOTE_BIND)) {
+    throw new Error(
+      `HOST=${host} is not loopback. Set BRIDGE_ALLOW_REMOTE_BIND=1 only when exposing the gateway beyond 127.0.0.1 with TLS and network ACLs.`,
+    );
+  }
+  if (host === "0.0.0.0" || host === "::") {
+    console.warn(
+      "h31d3nt0r: binding to all interfaces — restrict network access and terminate TLS in front of the gateway.",
+    );
+  }
+  return host;
+}
+
+function parseUpstreamUrl(raw: string | undefined): string | undefined {
+  if (raw === undefined || raw.trim().length === 0) {
+    return undefined;
+  }
+  const trimmed = raw.trim();
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    throw new Error("Invalid BRIDGE_CHAT_UPSTREAM_URL: not a valid URL.");
+  }
+  if (parsed.protocol !== "https:") {
+    throw new Error(
+      `BRIDGE_CHAT_UPSTREAM_URL must use https (got ${parsed.protocol}).`,
+    );
+  }
+  const allowlistRaw = process.env.BRIDGE_CHAT_UPSTREAM_HOST_ALLOWLIST?.trim();
+  if (allowlistRaw !== undefined && allowlistRaw.length > 0) {
+    const hostname = parsed.hostname.toLowerCase();
+    const allowed = allowlistRaw
+      .split(",")
+      .map((entry) => entry.trim().toLowerCase())
+      .filter((entry) => entry.length > 0);
+    const ok = allowed.some(
+      (entry) => hostname === entry || hostname.endsWith(`.${entry}`),
+    );
+    if (!ok) {
+      throw new Error(
+        `BRIDGE_CHAT_UPSTREAM_URL host ${parsed.hostname} is not listed in BRIDGE_CHAT_UPSTREAM_HOST_ALLOWLIST.`,
+      );
+    }
+  }
+  return trimmed;
+}
+
 function parseChatUpstreamConfig(): ChatUpstreamConfig {
   const mode = parseChatUpstreamMode(process.env.BRIDGE_CHAT_UPSTREAM_MODE);
   const rawUrl = process.env.BRIDGE_CHAT_UPSTREAM_URL?.trim();
@@ -201,7 +278,7 @@ function parseChatUpstreamConfig(): ChatUpstreamConfig {
     process.env.BRIDGE_CHAT_UPSTREAM_MS,
     120_000,
   );
-  const url = rawUrl?.length ? rawUrl : undefined;
+  const url = rawUrl?.length ? parseUpstreamUrl(rawUrl) : undefined;
   const apiKey = apiKeyRaw?.length ? apiKeyRaw : undefined;
   if (mode !== "off" && (!url?.length || !apiKey?.length)) {
     throw new Error(
@@ -216,7 +293,7 @@ export function loadConfig(options: LoadConfigOptions = {}): Config {
   return {
     cursorApiKey: required("CURSOR_API_KEY", process.env.CURSOR_API_KEY),
     bridgeApiKey: required("BRIDGE_API_KEY", process.env.BRIDGE_API_KEY),
-    host: process.env.HOST ?? "127.0.0.1",
+    host: parseHost(process.env.HOST),
     port: parsePort(process.env.PORT ?? "8787"),
     workspaceCwd: (() => {
       const repoRoot = process.env.WORKSPACE_CWD ?? SERVICE_ROOT;
@@ -257,5 +334,10 @@ export function loadConfig(options: LoadConfigOptions = {}): Config {
     ),
     chatUpstream: parseChatUpstreamConfig(),
     debugRequests: parseDebugRequests(process.env.BRIDGE_DEBUG_REQUESTS),
+    readyRateLimitPerMin: parseNonNegativeInt(
+      "BRIDGE_READY_RATE_LIMIT_PER_MIN",
+      process.env.BRIDGE_READY_RATE_LIMIT_PER_MIN,
+      30,
+    ),
   };
 }

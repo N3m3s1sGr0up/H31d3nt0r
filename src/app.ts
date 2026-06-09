@@ -11,8 +11,10 @@ import {
   methodNotAllowed,
   notFound,
   payloadTooLarge,
+  redactSecrets,
   respondWithError,
 } from "./errors.js";
+import { readyRateLimitMiddleware } from "./middleware/ready-rate-limit.js";
 import {
   parseContextLengthEnv,
   type ContextLengthTable,
@@ -74,6 +76,9 @@ export function buildApp(options: BuildAppOptions): BridgeApp {
   hono.use(requestIdMiddleware);
 
   registerHealthRoute(hono, config, startedAt);
+  if (config.readyRateLimitPerMin > 0) {
+    hono.use("/ready", readyRateLimitMiddleware(config.readyRateLimitPerMin));
+  }
   registerReadyRoute(hono, { config, cursorClient, startedAt });
 
   hono.use("/v1/*", debugRequestLogMiddleware(config.debugRequests));
@@ -111,7 +116,7 @@ export function buildApp(options: BuildAppOptions): BridgeApp {
         msg: "unhandled error",
         ...(rid !== undefined ? { request_id: rid } : {}),
         name: err.name,
-        message: err.message,
+        message: redactSecrets(err.message),
       }),
     );
     return respondWithError(c, internalError());

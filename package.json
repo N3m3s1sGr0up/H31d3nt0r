@@ -18,7 +18,8 @@
     "test:integration": "RUN_CURSOR_INTEGRATION=1 vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "version:bump": "tsx src/scripts/bump-version.ts",
-    "version:verify": "tsx src/scripts/verify-version.ts"
+    "version:verify": "tsx src/scripts/verify-version.ts",
+    "actions:verify": "tsx src/scripts/verify-actions-pinned.ts"
   },
   "dependencies": {
     "@cursor/sdk": "1.0.13",
@@ -29,7 +30,7 @@
     "@types/node": "^20.19.41",
     "tsx": "^4.22.3",
     "typescript": "^5.9.3",
-    "vitest": "^3.2.4"
+    "vitest": "^3.2.6"
   },
   "overrides": {
     "@tootallnate/once": "^2.0.3",

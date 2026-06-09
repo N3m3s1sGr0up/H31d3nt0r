@@ -22,6 +22,9 @@ const KEYS_TO_RESET = [
   "OPENAI_API_KEY",
   "BRIDGE_CHAT_UPSTREAM_MS",
   "BRIDGE_DEBUG_REQUESTS",
+  "BRIDGE_ALLOW_REMOTE_BIND",
+  "BRIDGE_READY_RATE_LIMIT_PER_MIN",
+  "BRIDGE_CHAT_UPSTREAM_HOST_ALLOWLIST",
 ];
 
 describe("loadConfig", () => {
@@ -195,5 +198,52 @@ describe("loadConfig", () => {
     expect(() => loadConfig({ dotEnvPath: path.join(tmp, "noop") })).toThrow(
       /BRIDGE_CHAT_UPSTREAM/,
     );
+  });
+
+  it("rejects non-loopback HOST without BRIDGE_ALLOW_REMOTE_BIND", () => {
+    process.env.CURSOR_API_KEY = "cursor-secret";
+    process.env.BRIDGE_API_KEY = "bridge-secret";
+    process.env.HOST = "0.0.0.0";
+    expect(() => loadConfig({ dotEnvPath: path.join(tmp, "noop") })).toThrow(
+      /BRIDGE_ALLOW_REMOTE_BIND/,
+    );
+  });
+
+  it("allows non-loopback HOST when BRIDGE_ALLOW_REMOTE_BIND=1", () => {
+    process.env.CURSOR_API_KEY = "cursor-secret";
+    process.env.BRIDGE_API_KEY = "bridge-secret";
+    process.env.HOST = "0.0.0.0";
+    process.env.BRIDGE_ALLOW_REMOTE_BIND = "1";
+    const cfg = loadConfig({ dotEnvPath: path.join(tmp, "noop") });
+    expect(cfg.host).toBe("0.0.0.0");
+  });
+
+  it("rejects non-https upstream URLs", () => {
+    process.env.CURSOR_API_KEY = "cursor-secret";
+    process.env.BRIDGE_API_KEY = "bridge-secret";
+    process.env.BRIDGE_CHAT_UPSTREAM_MODE = "tools";
+    process.env.BRIDGE_CHAT_UPSTREAM_URL = "http://api.openai.com/v1/chat/completions";
+    process.env.BRIDGE_CHAT_UPSTREAM_API_KEY = "sk-upstream-test";
+    expect(() => loadConfig({ dotEnvPath: path.join(tmp, "noop") })).toThrow(/https/);
+  });
+
+  it("enforces BRIDGE_CHAT_UPSTREAM_HOST_ALLOWLIST when set", () => {
+    process.env.CURSOR_API_KEY = "cursor-secret";
+    process.env.BRIDGE_API_KEY = "bridge-secret";
+    process.env.BRIDGE_CHAT_UPSTREAM_MODE = "tools";
+    process.env.BRIDGE_CHAT_UPSTREAM_URL = "https://evil.example/v1/chat/completions";
+    process.env.BRIDGE_CHAT_UPSTREAM_API_KEY = "sk-upstream-test";
+    process.env.BRIDGE_CHAT_UPSTREAM_HOST_ALLOWLIST = "api.openai.com";
+    expect(() => loadConfig({ dotEnvPath: path.join(tmp, "noop") })).toThrow(
+      /HOST_ALLOWLIST/,
+    );
+  });
+
+  it("parses BRIDGE_READY_RATE_LIMIT_PER_MIN", () => {
+    process.env.CURSOR_API_KEY = "cursor-secret";
+    process.env.BRIDGE_API_KEY = "bridge-secret";
+    process.env.BRIDGE_READY_RATE_LIMIT_PER_MIN = "12";
+    const cfg = loadConfig({ dotEnvPath: path.join(tmp, "noop") });
+    expect(cfg.readyRateLimitPerMin).toBe(12);
   });
 });

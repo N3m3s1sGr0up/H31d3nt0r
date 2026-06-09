@@ -4,7 +4,9 @@
 
 # H31d3nt0r
 
-**h31d3nt0r** is a minimal **loopback Cursor API endpoint**: a local HTTP gateway backed by [`@cursor/sdk`](https://cursor.com/docs/sdk/typescript). Its `/v1/*` routes speak the [OpenAI Chat Completions wire format](https://platform.openai.com/docs/api-reference/chat) (`/v1/models`, `/v1/chat/completions`) so OpenAI-compatible clients can connect — that compatibility is the protocol shape, not OpenAI cloud inference. Intended for tooling that sends OpenAI-style JSON over Bearer auth; nothing else is assumed about your stack.
+**h31d3nt0r** — "Heathens' Gate" — is a local gateway for connecting any AI-capable tool or client to modern AI models using your own Cursor subscription. Inspired by the open, inviting notion of a gate for all comers, h31d3nt0r lets any application that speaks the [OpenAI Chat Completions API wire format](https://platform.openai.com/docs/api-reference/chat) (e.g. `/v1/models`, `/v1/chat/completions`) access the power of models you run via Cursor.
+
+Its `/v1/*` routes are fully OpenAI-compatible at the protocol level, acting as a drop-in endpoint for any tool — from terminals to IDEs to creative automation — that can send standard OpenAI JSON with Bearer authentication. While it comes wired for [`@cursor/sdk`](https://cursor.com/docs/sdk/typescript), the architecture is purposefully stack-agnostic: the only requirement is a valid Cursor subscription powering the backend. The result: a universal "heathens' gate" that enables cursor subscription for any OpenAI-compatible client, via your own compute and your own API key.
 
 Bindings default to **127.0.0.1** only.
 

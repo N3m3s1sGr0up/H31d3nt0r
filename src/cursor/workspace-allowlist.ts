@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import path from "node:path";
 
 import type { Config } from "../config.js";
@@ -33,9 +33,21 @@ export function resolveAllowedWorkspaceCwd(requested: string, config: Config): s
   if (requested.trim().length === 0) return null;
   const resolved = path.resolve(requested);
   if (!existsSync(resolved)) return null;
+  let canonical: string;
+  try {
+    canonical = realpathSync(resolved);
+  } catch {
+    return null;
+  }
   for (const root of workspaceRoots(config)) {
-    if (isUnderRoot(root, resolved)) {
-      return resolved;
+    let canonicalRoot: string;
+    try {
+      canonicalRoot = realpathSync(root);
+    } catch {
+      continue;
+    }
+    if (isUnderRoot(canonicalRoot, canonical)) {
+      return canonical;
     }
   }
   return null;

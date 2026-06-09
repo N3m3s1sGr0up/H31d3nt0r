@@ -44,6 +44,12 @@ npm run build
 
 By default the gateway listens on `http://127.0.0.1:8787`.
 
+**Remote bind warning:** `HOST` defaults to loopback. Binding to `0.0.0.0` or another non-loopback address requires `BRIDGE_ALLOW_REMOTE_BIND=1` and must be paired with TLS termination and network ACLs — the gateway is not hardened for wide-area exposure by itself.
+
+**`BRIDGE_API_KEY` rotation:** generate a new secret (`openssl rand -hex 32`), update every client, restart the gateway, then remove the old key from client configs. There is no per-client revocation in v1 — rotation is all-or-nothing.
+
+**Upstream proxy:** when `BRIDGE_CHAT_UPSTREAM_MODE` is not `off`, `BRIDGE_CHAT_UPSTREAM_URL` must be `https://`. Optionally set `BRIDGE_CHAT_UPSTREAM_HOST_ALLOWLIST` to a comma-separated hostname list so only trusted upstreams are permitted.
+
 ## 4. Quick HTTP checks
 
 ```bash
@@ -120,6 +126,7 @@ After code or dependency updates: `npm run build && sudo systemctl restart h31d3
 | `EADDRINUSE` / "address already in use" on start | Another process (often h31d3nt0r) already listening on `PORT` | `./start.sh status`; `./start.sh stop`. With autoboot installed (§5), launchd may respawn until `./start.sh stop` (bootout) or `./start.sh uninstall-autoboot` |
 | Invalid model / model not found | Client model ID not in Cursor catalog | `GET /v1/models` for canonical IDs; built-in alias `composer2-5` → `composer-2.5`. Upstream/Cursor errors may also mean account or model access |
 | `GET /ready` returns 503 | Cursor cloud readiness probe failed | Unlike `/health` (liveness only). Check `CURSOR_API_KEY`, network, `BRIDGE_CURSOR_READY_MS`; set `BRIDGE_CURSOR_READY_MS=0` to skip probe if only `/health` is needed |
+| `GET /ready` returns 429 | Ready probe rate limit | Default `BRIDGE_READY_RATE_LIMIT_PER_MIN=30`; raise or set `0` to disable if your orchestrator legitimately polls faster |
 | Heremes "Connection error" with retries | Client polling before gateway is ready | Run `npm run verify-client` first; confirm autoboot finished (`./start.sh status`); base URL includes `/v1`; client not pointed at wrong `PORT` |
 
 **Quick diagnose:** `npm run verify-client` prints checklist hints and fails fast when the port is closed.
@@ -151,3 +158,12 @@ npm run test:integration
 ```
 
 CI runs unit tests on every push; the integration job runs only when `CURSOR_API_KEY` is configured as a repository secret.
+
+## 10. Releases
+
+- **Local:** `npm run version:bump -- <semver> "<note>"` then `npm run version:verify`, `npm test`, commit.
+- **GitHub:** Actions → **Bump version** (requires the `release` environment with reviewers configured in repo settings).
+
+The bump workflow only runs on `main`, uses concurrency locking, and refuses duplicate tags.
+
+**GitHub Actions pinning:** workflow `uses:` entries are pinned to full commit SHAs (not `@v4` tags). Run `npm run actions:verify` locally before editing workflows. Dependabot opens weekly PRs to refresh action SHAs (`.github/dependabot.yml`).
