@@ -23,7 +23,7 @@
   "dependencies": {
     "@cursor/sdk": "1.0.13",
     "@hono/node-server": "^2.0.4",
-    "hono": "^4.12.23"
+    "hono": "^4.12.26"
   },
   "devDependencies": {
     "@types/node": "^20.19.41",
