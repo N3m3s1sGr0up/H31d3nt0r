@@ -34,7 +34,7 @@
   "overrides": {
     "@tootallnate/once": "^2.0.3",
     "esbuild": "^0.28.1",
-    "tar": "^7.5.15",
+    "tar": "^7.5.16",
     "undici": "^6.26.0",
     "vite": "^6.4.2"
   }
