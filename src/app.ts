@@ -63,6 +63,7 @@ export function buildApp(options: BuildAppOptions): BridgeApp {
       cursorApiKey: config.cursorApiKey,
       workspaceCwd: config.workspaceCwd,
       localSettingSources: config.localSettingSources,
+      sandboxEnabled: config.sandboxEnabled,
       agentMcpServers: config.agentMcpServers,
     });
   const startedAt = options.startedAt ?? Date.now();

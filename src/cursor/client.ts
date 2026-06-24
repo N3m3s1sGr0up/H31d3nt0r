@@ -1,5 +1,6 @@
 import { Agent, Cursor } from "@cursor/sdk";
 import type {
+  LocalAgentOptions,
   McpServerConfig,
   ModelListItem,
   Run,
@@ -8,6 +9,8 @@ import type {
   SDKModel,
   SettingSource,
 } from "@cursor/sdk";
+
+type SandboxOptions = NonNullable<LocalAgentOptions["sandboxOptions"]>;
 
 import { buildOpenAiToolBridgeAppendage } from "../openai/tool-bridge.js";
 import type { OpenAIChatToolDefinition, OpenAIToolCall } from "../openai/types.js";
@@ -31,6 +34,11 @@ export interface CursorClientOptions {
   readonly cursorApiKey: string;
   readonly workspaceCwd: string | readonly string[];
   readonly localSettingSources?: readonly SettingSource[];
+  /**
+   * Cursor local-runtime sandbox toggle. `undefined` leaves the SDK default
+   * untouched; `false` runs Cursor without the sandbox.
+   */
+  readonly sandboxEnabled?: boolean;
   readonly agentMcpServers?: Readonly<Record<string, McpServerConfig>>;
 }
 
@@ -51,6 +59,7 @@ export class CursorClient {
     readonly extraWorkspaceRoot?: string;
   };
   readonly #settingSources: readonly SettingSource[];
+  readonly #sandboxEnabled: boolean | undefined;
   readonly #mcpServers: Readonly<Record<string, McpServerConfig>> | undefined;
 
   constructor(options: CursorClientOptions) {
@@ -69,18 +78,29 @@ export class CursorClient {
       extraWorkspaceRoot: extraWorkspace,
     };
     this.#settingSources = options.localSettingSources ?? ["project", "user"];
+    this.#sandboxEnabled = options.sandboxEnabled;
     this.#mcpServers = options.agentMcpServers;
   }
 
-  #localOptions(
-    cwdOverride?: string | readonly string[],
-  ): { cwd: string | string[]; settingSources: SettingSource[] } {
+  #localOptions(cwdOverride?: string | readonly string[]): {
+    cwd: string | string[];
+    settingSources: SettingSource[];
+    sandboxOptions?: SandboxOptions;
+  } {
     const base = cwdOverride ?? this.#cwd;
     const cwd: string | string[] = typeof base === "string" ? base : [...base];
-    return {
+    const local: {
+      cwd: string | string[];
+      settingSources: SettingSource[];
+      sandboxOptions?: SandboxOptions;
+    } = {
       cwd,
       settingSources: [...this.#settingSources],
     };
+    if (this.#sandboxEnabled !== undefined) {
+      local.sandboxOptions = { enabled: this.#sandboxEnabled };
+    }
+    return local;
   }
 
   #agentOptionsTail(): Partial<{

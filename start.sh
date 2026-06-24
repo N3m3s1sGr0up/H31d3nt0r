@@ -12,8 +12,9 @@ if [[ ! -r "$ENV_FILE" ]]; then
   exit 1
 fi
 
-# Defense-in-depth: refuse to start if secrets file is world-readable (macOS stat).
-mode="$(stat -f '%Lp' "$ENV_FILE" 2>/dev/null || stat -c '%a' "$ENV_FILE")"
+# Defense-in-depth: refuse to start if secrets file is world-readable.
+# GNU stat (-c, Linux) is tried first; BSD/macOS stat (-f) is the fallback.
+mode="$(stat -c '%a' "$ENV_FILE" 2>/dev/null || stat -f '%Lp' "$ENV_FILE")"
 if [[ "$mode" != "600" && "$mode" != "400" ]]; then
   echo "start.sh: $ENV_FILE must be mode 600 (run: chmod 600 .env.local)" >&2
   exit 1

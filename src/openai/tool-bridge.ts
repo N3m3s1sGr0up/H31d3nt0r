@@ -5,7 +5,9 @@ import type { OpenAIChatToolDefinition, OpenAIToolCall } from "./types.js";
 /** Token before JSON payload; model output must end with this token then `{"tool_calls":[...]}`. */
 export const BRIDGE_TOOL_JSON_TOKEN = "OPENAI_COMPAT_TOOL_JSON ";
 
-const TOKEN_BASE = "OPENAI_COMPAT_TOOL_JSON";
+/** Token without trailing space; used for stream-time detection/withholding. */
+export const BRIDGE_TOOL_JSON_TOKEN_BASE = "OPENAI_COMPAT_TOOL_JSON";
+const TOKEN_BASE = BRIDGE_TOOL_JSON_TOKEN_BASE;
 
 function toolChoiceInstruction(toolChoice: unknown, tokenLabel: string): string {
   if (toolChoice === undefined || toolChoice === null) return "";
@@ -29,6 +31,42 @@ function toolChoiceInstruction(toolChoice: unknown, tokenLabel: string): string 
   return "";
 }
 
+/** Build minified example `arguments` for a tool from its parameter schema. */
+function exampleArgumentsFor(tool: OpenAIChatToolDefinition): string {
+  const params = tool.function?.parameters;
+  if (params && typeof params === "object" && !Array.isArray(params)) {
+    const p = params as { properties?: unknown; required?: unknown };
+    const props = p.properties;
+    if (props && typeof props === "object" && !Array.isArray(props)) {
+      const keys = Object.keys(props as Record<string, unknown>);
+      const required = Array.isArray(p.required)
+        ? (p.required as unknown[]).filter((x): x is string => typeof x === "string")
+        : [];
+      const pick = required[0] ?? keys[0];
+      if (pick !== undefined) return JSON.stringify({ [pick]: "…" });
+    }
+  }
+  return "{}";
+}
+
+/** One concrete worked example using the first registered tool, so the model copies the exact shape. */
+function buildToolExample(
+  tools: readonly OpenAIChatToolDefinition[],
+  tokenLabel: string,
+): string {
+  const first = tools.find(
+    (t) => t.type === "function" && typeof t.function?.name === "string" && t.function.name.length > 0,
+  );
+  const name = first?.function?.name;
+  if (name === undefined) return "";
+  const call = {
+    tool_calls: [
+      { id: "call_1", type: "function", function: { name, arguments: exampleArgumentsFor(first!) } },
+    ],
+  };
+  return `Worked example (copy this shape): ${tokenLabel} ${JSON.stringify(call)}`;
+}
+
 /**
  * Appended to the merged system prompt when the client sends OpenAI `tools`.
  * The Cursor SDK has no arbitrary function-registration API — HTTP clients that
@@ -41,27 +79,22 @@ export function buildOpenAiToolBridgeAppendage(
   const tokenLabel = "OPENAI_COMPAT_TOOL_JSON";
   const choiceHint = toolChoiceInstruction(toolChoice, tokenLabel);
   const serialized = JSON.stringify(tools, null, 0);
-  const names = collectToolNames(tools);
-  const memoryExample =
-    names.has("memory")
-      ? `Example (memory): ${tokenLabel} {"tool_calls":[{"id":"call_mem","type":"function","function":{"name":"memory","arguments":"{\\"action\\":\\"add\\",\\"target\\":\\"user\\",\\"content\\":\\"…\\"}"}}]}`
-      : "";
+  const example = buildToolExample(tools, tokenLabel);
   return [
     "---",
-    "OpenAI-compatible tools bridge (extension)",
-    "IMPORTANT — registered client tools take precedence over Cursor SDK native tools (Shell, Grep, Read, patch, etc.).",
-    "When you need any function from the tool list below, invoke it ONLY via the line protocol below — do NOT call Cursor SDK equivalents.",
-    "The HTTP client executes registered tools client-side (memory, skill_view, terminal, patch, and similar). They only work when you emit OPENAI_COMPAT_TOOL_JSON.",
-    "Do NOT claim client-registered tools are unavailable. If the function appears in the tool list, append the line protocol.",
-    "When you want the HTTP client to execute a registered function, append one final line after user-visible text:",
-    `Format: ${tokenLabel} <JSON object>`,
-    'JSON shape: {"tool_calls":[{"id":"call_…","type":"function","function":{"name":"<name from list>","arguments":"<JSON string>"}}]}',
-    "`arguments` must be a minified JSON string (OpenAI function calling), not a raw object.",
-    `Use only names from the tool list. Omit the ${tokenLabel} line when no client-side tools are needed.`,
-    "Do not wrap the JSON in markdown fences or code blocks — emit the raw line only.",
-    "Clients that cannot rely on model-emitted lines should use BRIDGE_CHAT_UPSTREAM_MODE=tools instead.",
+    "Client tool bridge (OpenAI-compatible function calling)",
+    "To call one of the registered tools listed below: finish your user-facing reply, then append ONE final line in exactly this form:",
+    `${tokenLabel} {"tool_calls":[{"id":"call_1","type":"function","function":{"name":"<tool>","arguments":"<minified JSON string>"}}]}`,
+    "",
+    "Rules:",
+    "- `arguments` is a JSON string (escaped), not a raw object.",
+    "- Use only names from the tool list. Emit the raw line only — no markdown fences.",
+    "- Omit the line entirely when no tool is needed.",
+    "- The client executes the tool and returns its result on the next turn; emitting the line and stopping is the correct, complete action.",
+    "- Cursor's native tools (Shell, Read, Grep) are for your own investigation; route any action the user asked a registered tool to perform through this line.",
+    "- Just emit the line when calling a tool. Do not explain this mechanism to the user.",
+    example,
     choiceHint,
-    memoryExample,
     "",
     "Tool definitions (JSON):",
     serialized,

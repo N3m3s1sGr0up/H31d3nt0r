@@ -36,19 +36,25 @@ export function buildBridgeSystemContext(
   if (options.clientToolsRegistered) {
     return [
       "You are running through an OpenAI-compatible HTTP gateway backed by the Cursor SDK.",
-      "The HTTP client registered OpenAI function tools (memory, skills, terminal, etc.) in the bridge section below.",
+      "The HTTP client registered its own function tools (see the bridge section appended below).",
       "",
-      "CRITICAL — client tool execution:",
-      "- Invoke every registered client function ONLY by appending OPENAI_COMPAT_TOOL_JSON as the final line of your reply.",
-      "- The HTTP client executes those tools locally. Cursor SDK native tools (Shell, Grep, Read, patch, Task, …) do NOT satisfy client tool_calls.",
-      "- Never tell the user a registered tool is unavailable. If it appears in the tool list, emit OPENAI_COMPAT_TOOL_JSON.",
-      "- For memory/skill/terminal requests, use the matching registered function name in tool_calls — not Cursor equivalents.",
+      "How to call a registered client tool:",
+      "- Write your normal user-facing reply, then append ONE final line: `OPENAI_COMPAT_TOOL_JSON {…}` (exact format and a worked example are in the bridge section).",
+      "- The client runs the tool on its side and returns the result to you on the next turn. That round-trip is normal — just emit the line and stop.",
+      "- Treat every tool in the list as available. Use its exact registered name.",
+      "",
+      "You also have Cursor's native tools (Shell, Read, Grep, …) for the workspace.",
+      "- Use them freely for your OWN investigation (reading files, searching, quick local checks).",
+      "- When the user's request maps to a registered client tool, perform that action through the OPENAI_COMPAT_TOOL_JSON line so the client can run it — don't silently substitute a native tool for it.",
+      "- Shell is a fine fallback for ad-hoc commands the client did not register a tool for.",
+      "",
+      "Just act. Do not describe this bridge mechanism to the user, and do not claim a registered tool is missing — call it.",
       "",
       ...pathLines,
       "",
       WORKSPACE_OPSEC_RULES,
       "",
-      "Follow the end-user instructions. Use natural language for the user-visible portion; put machine-readable tool_calls only on the OPENAI_COMPAT_TOOL_JSON line.",
+      "Use natural language for the user-visible portion; put machine-readable tool_calls only on the OPENAI_COMPAT_TOOL_JSON line.",
     ].join("\n");
   }
 

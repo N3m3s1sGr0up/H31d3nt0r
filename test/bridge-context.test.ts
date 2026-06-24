@@ -25,8 +25,9 @@ describe("bridge context", () => {
       { repoRoot: "/repo" },
       { clientToolsRegistered: true },
     );
-    expect(ctx).toContain("CRITICAL — client tool execution");
-    expect(ctx).toContain("Never tell the user a registered tool is unavailable");
+    expect(ctx).toContain("How to call a registered client tool");
+    expect(ctx).toContain("OPENAI_COMPAT_TOOL_JSON");
+    expect(ctx).toContain("do not claim a registered tool is missing");
     expect(ctx).not.toContain("do not claim you lack access unless a tool genuinely fails");
   });
 

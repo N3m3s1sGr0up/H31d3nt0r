@@ -92,6 +92,25 @@ function makeFakeRun(opts: FakeRunOptions): Run {
   } as Run;
 }
 
+function makeScriptedRun(messages: readonly SDKMessage[], result: RunResult): Run {
+  async function* stream(): AsyncGenerator<SDKMessage, void> {
+    for (const m of messages) yield m;
+  }
+  return {
+    id: "run-test",
+    agentId: "agent-test",
+    supports: (op) => op === "stream" || op === "wait",
+    unsupportedReason: () => undefined,
+    stream,
+    conversation: async () => [],
+    wait: async () => result,
+    cancel: async () => {},
+    status: "finished",
+    onDidChangeStatus: () => () => {},
+    result: result.result,
+  } as Run;
+}
+
 function makeFakeAgent(): SDKAgent {
   return {
     agentId: "agent-test",
@@ -142,6 +161,74 @@ describe("POST /v1/chat/completions (non-stream)", () => {
     expect(body.choices[0]?.message.content).toBe("SDK_OK");
     expect(body.choices[0]?.finish_reason).toBe("stop");
     expect((body as { usage?: { prompt_tokens?: number } }).usage?.prompt_tokens).toBeGreaterThan(0);
+  });
+
+  it("re-prompts once when tool_choice requires a call but the model narrated instead", async () => {
+    const payload = {
+      tool_calls: [
+        { id: "call_1", type: "function", function: { name: "memory_store", arguments: "{}" } },
+      ],
+    };
+    const chatComplete = vi
+      .fn<CursorClient["chatComplete"]>()
+      .mockResolvedValueOnce({
+        id: "run-narrate",
+        status: "finished",
+        result: "Client tools must be invoked via OPENAI_COMPAT_TOOL_JSON appended to the response.",
+      })
+      .mockResolvedValueOnce({
+        id: "run-fixed",
+        status: "finished",
+        result: `Stored.\nOPENAI_COMPAT_TOOL_JSON ${JSON.stringify(payload)}`,
+      });
+
+    const { hono } = buildApp({
+      config: fixtureConfig(),
+      cursorClient: fakeClient({ chatComplete }),
+    });
+    const res = await hono.request("http://localhost/v1/chat/completions", {
+      method: "POST",
+      headers: withBearer(),
+      body: JSON.stringify({
+        model: "composer-2",
+        messages: [{ role: "user", content: "Remember this" }],
+        tools: [{ type: "function", function: { name: "memory_store" } }],
+        tool_choice: "required",
+      }),
+    });
+    expect(res.status).toBe(200);
+    expect(chatComplete).toHaveBeenCalledTimes(2);
+    const body = (await res.json()) as {
+      choices: Array<{
+        finish_reason: string;
+        message: { tool_calls?: { function: { name: string } }[] };
+      }>;
+    };
+    expect(body.choices[0]?.finish_reason).toBe("tool_calls");
+    expect(body.choices[0]?.message.tool_calls?.[0]?.function.name).toBe("memory_store");
+  });
+
+  it("does not re-prompt when tool_choice is not required", async () => {
+    const chatComplete = vi.fn<CursorClient["chatComplete"]>().mockResolvedValue({
+      id: "run-x",
+      status: "finished",
+      result: "Just a plain answer, no tool needed.",
+    });
+    const { hono } = buildApp({
+      config: fixtureConfig(),
+      cursorClient: fakeClient({ chatComplete }),
+    });
+    const res = await hono.request("http://localhost/v1/chat/completions", {
+      method: "POST",
+      headers: withBearer(),
+      body: JSON.stringify({
+        model: "composer-2",
+        messages: [{ role: "user", content: "hi" }],
+        tools: [{ type: "function", function: { name: "memory_store" } }],
+      }),
+    });
+    expect(res.status).toBe(200);
+    expect(chatComplete).toHaveBeenCalledTimes(1);
   });
 
   it("rejects requests without bearer (no SDK call)", async () => {
@@ -810,6 +897,71 @@ describe("POST /v1/chat/completions (stream)", () => {
     expect(withTools?.choices[0]?.delta?.tool_calls?.[0]?.function.name).toBe("memory_store");
     const terminal = parsed.find((c) => c.choices[0]?.finish_reason === "tool_calls");
     expect(terminal).toBeDefined();
+  });
+
+  it("streams Cursor thinking + tool_call lifecycle live before the final tool_calls", async () => {
+    const payload = {
+      tool_calls: [
+        { id: "call_mem", type: "function", function: { name: "memory_store", arguments: "{}" } },
+      ],
+    };
+    const finale = `OPENAI_COMPAT_TOOL_JSON ${JSON.stringify(payload)}`;
+    const answer = "All done investigating the repo.";
+    const full = `${answer}\n${finale}`;
+    const messages: SDKMessage[] = [
+      { type: "thinking", agent_id: "a", run_id: "r", text: "Let me inspect the files." },
+      { type: "tool_call", agent_id: "a", run_id: "r", call_id: "c1", name: "Shell", status: "running" },
+      { type: "tool_call", agent_id: "a", run_id: "r", call_id: "c1", name: "Shell", status: "completed" },
+      {
+        type: "assistant",
+        agent_id: "a",
+        run_id: "r",
+        message: { role: "assistant", content: [{ type: "text", text: full }] },
+      },
+    ];
+    const run = makeScriptedRun(messages, { id: "run-test", status: "finished", result: full });
+    const { hono } = buildApp({
+      config: fixtureConfig(),
+      cursorClient: fakeClient({
+        openStreamingChat: async () => fakeStreamingHandle(run),
+      }),
+    });
+    const res = await hono.request("http://localhost/v1/chat/completions", {
+      method: "POST",
+      headers: withBearer(),
+      body: JSON.stringify({
+        model: "composer-2",
+        stream: true,
+        messages: [{ role: "user", content: "Investigate" }],
+        tools: [{ type: "function", function: { name: "memory_store" } }],
+      }),
+    });
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    const dataLines = text
+      .split("\n")
+      .filter((l) => l.startsWith("data: ") && !l.includes("[DONE]"))
+      .map((l) => l.slice("data: ".length));
+    const parsed = dataLines.map(
+      (l) =>
+        JSON.parse(l) as {
+          choices: Array<{
+            delta?: { content?: string; tool_calls?: { function: { name: string } }[] };
+            finish_reason?: string | null;
+          }>;
+        },
+    );
+    const streamedText = parsed.map((c) => c.choices[0]?.delta?.content ?? "").join("");
+    // Live progress: reasoning + Cursor's own tool usage surfaced mid-run.
+    expect(streamedText).toContain("Let me inspect the files.");
+    expect(streamedText).toContain("⚙ Shell");
+    // The OPENAI_COMPAT_TOOL_JSON sentinel must never leak to the client.
+    expect(streamedText).not.toContain("OPENAI_COMPAT_TOOL_JSON");
+    // Final answer text is still delivered, plus parsed tool_calls + terminal.
+    expect(streamedText).toContain("All done investigating the repo.");
+    const withTools = parsed.find((c) => c.choices[0]?.delta?.tool_calls?.length);
+    expect(withTools?.choices[0]?.delta?.tool_calls?.[0]?.function.name).toBe("memory_store");
+    expect(parsed.find((c) => c.choices[0]?.finish_reason === "tool_calls")).toBeDefined();
   });
 
   it("emits estimated usage chunk when stream_options.include_usage is true", async () => {

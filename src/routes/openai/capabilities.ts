@@ -53,6 +53,8 @@ export function registerCapabilitiesRoute(
         sse_heartbeat_ping: config.sseHeartbeatIntervalMs,
       },
       cursor_setting_sources: config.localSettingSources,
+      cursor_sandbox:
+        config.sandboxEnabled === undefined ? "sdk_default" : config.sandboxEnabled,
       openai_tool_routing:
         "BRIDGE_CHAT_UPSTREAM_* forwards /v1/chat/completions to an OpenAI-compatible upstream when enabled (modes: off | tools | always). Otherwise Cursor handles chat; for tool callbacks over the Cursor path, see docs/reference/openai-extensions.md (OPENAI_COMPAT_TOOL_JSON).",
       cursor_native_model_prefixes: ["cursor/", "cursor:"],

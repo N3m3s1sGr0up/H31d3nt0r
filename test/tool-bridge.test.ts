@@ -77,27 +77,36 @@ describe("tool-bridge", () => {
       [{ type: "function", function: { name: "ping" } }],
       undefined,
     );
-    expect(append).toContain("Do not wrap");
-    expect(append).toContain("markdown");
-    expect(append).toContain("BRIDGE_CHAT_UPSTREAM_MODE=tools");
+    expect(append).toContain("no markdown fences");
+    expect(append).toContain("Emit the raw line only");
   });
 
-  it("buildOpenAiToolBridgeAppendage includes memory example when memory is registered", () => {
+  it("buildOpenAiToolBridgeAppendage includes a worked example using the first registered tool", () => {
     const append = buildOpenAiToolBridgeAppendage(
-      [{ type: "function", function: { name: "memory" } }],
+      [
+        {
+          type: "function",
+          function: {
+            name: "memory",
+            parameters: { type: "object", properties: { action: { type: "string" } }, required: ["action"] },
+          },
+        },
+      ],
       undefined,
     );
+    expect(append).toContain("Worked example");
     expect(append).toContain('"name":"memory"');
+    // The first required parameter is surfaced in the example arguments string.
     expect(append).toContain("action");
   });
 
-  it("buildOpenAiToolBridgeAppendage prioritizes client tools over Cursor SDK natives", () => {
+  it("buildOpenAiToolBridgeAppendage routes client actions through the line, native tools for investigation", () => {
     const append = buildOpenAiToolBridgeAppendage(
       [{ type: "function", function: { name: "memory" } }],
       undefined,
     );
-    expect(append).toContain("take precedence over Cursor SDK native tools");
-    expect(append).toContain("Do NOT claim client-registered tools are unavailable");
-    expect(append).toContain("ONLY via the line protocol");
+    expect(append).toContain("Client tool bridge");
+    expect(append).toContain("route any action the user asked a registered tool to perform through this line");
+    expect(append).toContain("Do not explain this mechanism to the user");
   });
 });

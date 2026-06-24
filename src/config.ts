@@ -21,6 +21,12 @@ export interface Config {
    */
   readonly localSettingSources: readonly SettingSource[];
   /**
+   * Cursor local-runtime sandbox toggle, mapped to
+   * `AgentOptions.local.sandboxOptions.enabled`. `undefined` leaves the SDK
+   * default in place; `false` runs Cursor without the sandbox (`BRIDGE_SANDBOX=0`).
+   */
+  readonly sandboxEnabled?: boolean;
+  /**
    * Optional `AgentOptions.mcpServers` passed on every Cursor run —
    * register stdio/HTTP MCP explicitly. JSON object keyed by alias.
    * See `CURSOR_AGENT_MCP_SERVERS`.
@@ -205,6 +211,25 @@ function parseDebugRequests(raw: string | undefined): boolean {
   return token === "1" || token === "true" || token === "yes";
 }
 
+/**
+ * Tri-state sandbox toggle. Unset → leave the SDK/runtime default untouched
+ * (returns `undefined`). Truthy/falsy tokens map to an explicit boolean that
+ * the gateway forwards as `local.sandboxOptions.enabled`.
+ */
+function parseSandboxEnabled(raw: string | undefined): boolean | undefined {
+  if (raw === undefined || raw.trim().length === 0) return undefined;
+  const token = raw.trim().toLowerCase();
+  if (token === "1" || token === "true" || token === "yes" || token === "on") {
+    return true;
+  }
+  if (token === "0" || token === "false" || token === "no" || token === "off") {
+    return false;
+  }
+  throw new Error(
+    `Invalid BRIDGE_SANDBOX=${raw}; expected a boolean (1/0, true/false, yes/no, on/off).`,
+  );
+}
+
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "::1"]);
 
 function parseAllowRemoteBind(raw: string | undefined): boolean {
@@ -304,6 +329,7 @@ export function loadConfig(options: LoadConfigOptions = {}): Config {
       return repoRoot === extra ? repoRoot : [repoRoot, extra];
     })(),
     localSettingSources: parseCommaSettingSources(process.env.CURSOR_LOCAL_SETTING_SOURCES),
+    sandboxEnabled: parseSandboxEnabled(process.env.BRIDGE_SANDBOX),
     agentMcpServers: parseAgentMcpServers(process.env.CURSOR_AGENT_MCP_SERVERS),
     maxAgents: parseMaxAgents(process.env.MAX_AGENTS ?? "4"),
     bridgeGeneration: Date.now(),

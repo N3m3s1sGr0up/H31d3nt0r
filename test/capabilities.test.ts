@@ -25,6 +25,7 @@ const EXPECTED_TOP_LEVEL_KEYS = [
   "bridge_generation_notes",
   "bridge_version",
   "cursor_native_model_prefixes",
+  "cursor_sandbox",
   "cursor_setting_sources",
   "extra_workspace_cwd",
   "inference_backend",

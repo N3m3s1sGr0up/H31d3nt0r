@@ -29,7 +29,7 @@ import {
   buildStreamTerminalError,
   contentChunk,
   createAssistantTextTracker,
-  finalText,
+  createStreamProgressTracker,
   openingChunk,
   SSE_DONE,
   sseComment,
@@ -318,6 +318,35 @@ function parseAssistantFromRun(
   return { content: t.length > 0 ? t : null };
 }
 
+/** True when the client demanded a tool call (`required` or a specific function). */
+function toolChoiceRequiresCall(toolChoice: unknown): boolean {
+  if (toolChoice === "required") return true;
+  if (typeof toolChoice === "object" && toolChoice !== null && !Array.isArray(toolChoice)) {
+    const o = toolChoice as Record<string, unknown>;
+    return o.type === "function" && typeof o.function === "object" && o.function !== null;
+  }
+  return false;
+}
+
+/**
+ * Corrective follow-up sent when a `tool_choice`-required run came back without
+ * a tool call (the model narrated the protocol instead of emitting the line).
+ */
+function buildToolRetryMessages(
+  messages: ReturnType<typeof normalizedToBridgeMessages>,
+  priorText: string,
+): ReturnType<typeof normalizedToBridgeMessages> {
+  const corrective =
+    "Your previous reply did not include the required tool call. Do not explain the bridge mechanism or restate these rules. " +
+    "Respond now with exactly one OPENAI_COMPAT_TOOL_JSON line that calls the required registered tool, using only names from the tool list.";
+  const prior = priorText.trim();
+  return [
+    ...messages,
+    { role: "assistant", content: prior.length > 0 ? prior : "(no tool call emitted)" },
+    { role: "user", content: corrective },
+  ];
+}
+
 async function handleNonStreaming(
   c: Context,
   client: CursorClient,
@@ -342,7 +371,32 @@ async function handleNonStreaming(
     if (result.status === "error") {
       return respondWithError(c, runFailed(`Cursor run failed (id=${result.id}).`));
     }
-    const assistant = parseAssistantFromRun(parsed, result.result ?? "");
+    let assistant = parseAssistantFromRun(parsed, result.result ?? "");
+
+    const needsToolCall =
+      bridgeInput?.tools !== undefined &&
+      bridgeInput.tools.length > 0 &&
+      toolChoiceRequiresCall(parsed.tool_choice) &&
+      (assistant.tool_calls === undefined || assistant.tool_calls.length === 0);
+    if (needsToolCall && result.status !== "cancelled") {
+      const retry = await withTimeout(
+        client.chatComplete(
+          buildToolRetryMessages(messages, result.result ?? ""),
+          model,
+          bridgeInput,
+          cwdOverride,
+        ),
+        cfg.chatCompletionTimeoutMs,
+        "non_stream_chat_complete_tool_retry",
+      );
+      if (retry.status !== "error") {
+        const retryAssistant = parseAssistantFromRun(parsed, retry.result ?? "");
+        if (retryAssistant.tool_calls && retryAssistant.tool_calls.length > 0) {
+          assistant = retryAssistant;
+        }
+      }
+    }
+
     const usage = estimateChatCompletionUsage(parsed, assistant);
     const completion = makeChatCompletion(completionId, model, assistant, createdSec, usage);
     if (result.status === "cancelled") {
@@ -463,6 +517,7 @@ async function handleStreaming(
     c.header("Connection", "keep-alive");
 
     const tracker = createAssistantTextTracker();
+    const progress = bufferTools ? createStreamProgressTracker() : undefined;
 
     const writeBridgeStreamErrorAndDone = async (params: {
       readonly code: "stream_upstream_failure" | "stream_wall_clock_timeout" | "stream_client_disconnect";
@@ -499,42 +554,28 @@ async function handleStreaming(
         if (!includeUsageDummy) return undefined;
         return estimateChatCompletionUsage(parsed, assistant);
       };
-      if (result.status === "error") {
-        const remaining = finalText(result, tracker);
-        if (bufferTools) {
-          const parsedAssistant = parseAssistantFromRun(parsed, remaining);
-          const text = parsedAssistant.content ?? "";
-          if (text.length > 0) await out.write(sseEvent(contentChunk(ctx, text)));
-          if (parsedAssistant.tool_calls?.length) {
-            await out.write(sseEvent(toolCallsDeltaChunk(ctx, [...parsedAssistant.tool_calls])));
-          }
-          await out.write(sseEvent(terminalChunk(ctx, finishReasonFor(parsedAssistant), streamUsage(parsedAssistant))));
-        } else {
-          if (remaining.length > tracker.current().length) {
-            const delta = remaining.slice(tracker.current().length);
-            await out.write(sseEvent(contentChunk(ctx, delta)));
-          }
-          const assistant = parseAssistantFromRun(parsed, remaining);
-          await out.write(sseEvent(terminalChunk(ctx, "stop", streamUsage(assistant))));
+      if (bufferTools && progress !== undefined) {
+        // Tool-bridge path: live lines (text/thinking/tool status) were already
+        // streamed by `progress`. Flush any buffered answer remainder (token
+        // line stripped) as whole lines, then emit the parsed `tool_calls`.
+        const source = progress.answerText().length > 0 ? progress.answerText() : (result.result ?? "");
+        const parsedAssistant = parseAssistantFromRun(parsed, source);
+        for (const line of progress.drainFinalAnswer()) {
+          await out.write(sseEvent(contentChunk(ctx, line)));
         }
+        if (parsedAssistant.tool_calls?.length) {
+          await out.write(sseEvent(toolCallsDeltaChunk(ctx, [...parsedAssistant.tool_calls])));
+        }
+        await out.write(sseEvent(terminalChunk(ctx, finishReasonFor(parsedAssistant), streamUsage(parsedAssistant))));
       } else {
-        const finalContent = finalText(result, tracker);
-        if (bufferTools) {
-          const parsedAssistant = parseAssistantFromRun(parsed, finalContent);
-          const text = parsedAssistant.content ?? "";
-          if (text.length > 0) await out.write(sseEvent(contentChunk(ctx, text)));
-          if (parsedAssistant.tool_calls?.length) {
-            await out.write(sseEvent(toolCallsDeltaChunk(ctx, [...parsedAssistant.tool_calls])));
-          }
-          await out.write(sseEvent(terminalChunk(ctx, finishReasonFor(parsedAssistant), streamUsage(parsedAssistant))));
-        } else {
-          if (finalContent.length > tracker.current().length) {
-            const delta = finalContent.slice(tracker.current().length);
-            await out.write(sseEvent(contentChunk(ctx, delta)));
-          }
-          const assistant = parseAssistantFromRun(parsed, finalContent);
-          await out.write(sseEvent(terminalChunk(ctx, "stop", streamUsage(assistant))));
+        const rawFinal =
+          result.result && result.result.length > 0 ? result.result : tracker.current();
+        if (rawFinal.length > tracker.current().length) {
+          const delta = rawFinal.slice(tracker.current().length);
+          await out.write(sseEvent(contentChunk(ctx, delta)));
         }
+        const assistant = parseAssistantFromRun(parsed, rawFinal);
+        await out.write(sseEvent(terminalChunk(ctx, "stop", streamUsage(assistant))));
       }
       await out.write(SSE_DONE);
     };
@@ -546,7 +587,13 @@ async function handleStreaming(
           break;
         }
         if (bufferTools) {
-          tracker.consume(msg);
+          // Stream reasoning, Cursor tool-call lifecycle, and answer text live
+          // (answer tail withheld so the OPENAI_COMPAT_TOOL_JSON line never leaks).
+          if (progress !== undefined) {
+            for (const piece of progress.consume(msg)) {
+              await out.write(sseEvent(contentChunk(ctx, piece)));
+            }
+          }
         } else {
           const delta = tracker.consume(msg);
           if (delta !== undefined && delta.length > 0) {
