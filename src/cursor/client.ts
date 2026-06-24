@@ -17,6 +17,7 @@ import type { OpenAIChatToolDefinition, OpenAIToolCall } from "../openai/types.j
 
 import { buildBridgeSystemContext, prependBridgeContext } from "./bridge-context.js";
 import { resolveModelAlias } from "./model-aliases.js";
+import { OperatorContextReader } from "./operator-context.js";
 
 export interface ChatMessage {
   readonly role: "system" | "user" | "assistant";
@@ -40,6 +41,10 @@ export interface CursorClientOptions {
    */
   readonly sandboxEnabled?: boolean;
   readonly agentMcpServers?: Readonly<Record<string, McpServerConfig>>;
+  /** Operator-authored context file injected into every run (see `BRIDGE_CONTEXT_FILE`). */
+  readonly contextFilePath?: string;
+  /** Byte cap applied when reading `contextFilePath`. */
+  readonly contextFileMaxBytes?: number;
 }
 
 export interface StreamingChatHandle {
@@ -61,6 +66,7 @@ export class CursorClient {
   readonly #settingSources: readonly SettingSource[];
   readonly #sandboxEnabled: boolean | undefined;
   readonly #mcpServers: Readonly<Record<string, McpServerConfig>> | undefined;
+  readonly #operatorContext: OperatorContextReader;
 
   constructor(options: CursorClientOptions) {
     this.#apiKey = options.cursorApiKey;
@@ -80,6 +86,10 @@ export class CursorClient {
     this.#settingSources = options.localSettingSources ?? ["project", "user"];
     this.#sandboxEnabled = options.sandboxEnabled;
     this.#mcpServers = options.agentMcpServers;
+    this.#operatorContext = new OperatorContextReader({
+      path: options.contextFilePath,
+      maxBytes: options.contextFileMaxBytes,
+    });
   }
 
   #localOptions(cwdOverride?: string | readonly string[]): {
@@ -119,6 +129,7 @@ export class CursorClient {
     const hasClientTools = Boolean(bridge?.tools && bridge.tools.length > 0);
     const context = buildBridgeSystemContext(this.#bridgePaths, {
       clientToolsRegistered: hasClientTools,
+      operatorContext: this.#operatorContext.load(),
     });
     return prependBridgeContext(messages, context);
   }

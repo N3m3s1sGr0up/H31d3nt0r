@@ -1,3 +1,5 @@
+import { existsSync } from "node:fs";
+
 import type { Hono } from "hono";
 
 import { bridgeReleaseMetadata } from "../../bridge-metadata.js";
@@ -24,15 +26,37 @@ export function registerCapabilitiesRoute(
     const { config } = deps;
     const cwd = config.workspaceCwd;
     const meta = bridgeReleaseMetadata();
+    const workspaceRoots = Array.isArray(cwd) ? cwd : [cwd];
+    const inferenceBackend =
+      config.chatUpstream.mode === "always"
+        ? "openai_compatible_upstream"
+        : "cursor_sdk_local";
     return c.json({
       suggested_base_url: `http://${config.host}:${config.port}/v1`,
       bridge_version: meta.version,
       bridge_generation_notes: [...meta.generationChangelog],
       bridge_generation: config.bridgeGeneration,
-      inference_backend:
-        config.chatUpstream.mode === "always"
-          ? "openai_compatible_upstream"
-          : "cursor_sdk_local",
+      inference_backend: inferenceBackend,
+      agent_capabilities: {
+        inference_backend: inferenceBackend,
+        native_tooling:
+          "cursor_sdk_local runs expose filesystem + shell tools (Read, Shell, Grep, …) scoped to workspace_cwd; not used when inference_backend is openai_compatible_upstream.",
+        workspace_roots: workspaceRoots,
+        sandbox:
+          config.sandboxEnabled === undefined ? "sdk_default" : config.sandboxEnabled,
+        client_tool_bridge: {
+          protocol: "OPENAI_COMPAT_TOOL_JSON",
+          activation: "send a non-empty tools[] array on /v1/chat/completions",
+          execution:
+            "client-side: the gateway returns tool_calls; the client runs the tool and returns the result on the next turn.",
+        },
+        operator_context: {
+          configured: Boolean(config.contextFilePath),
+          path: config.contextFilePath ?? null,
+          loaded:
+            config.contextFilePath !== undefined && existsSync(config.contextFilePath),
+        },
+      },
       openai_upstream_chat: {
         mode: config.chatUpstream.mode,
         timeout_ms: config.chatUpstream.timeoutMs,

@@ -3,6 +3,23 @@ import type { OpenAIToolCall } from "../openai/types.js";
 export interface BridgeSystemContextOptions {
   /** OpenAI-compatible client sent `tools[]` — client-side execution via OPENAI_COMPAT_TOOL_JSON. */
   readonly clientToolsRegistered?: boolean;
+  /**
+   * Operator-authored standing context (from `BRIDGE_CONTEXT_FILE`) injected as
+   * a delimited section so the agent carries deployment-specific knowledge.
+   */
+  readonly operatorContext?: string;
+}
+
+/** Trailing operator-context section, or `[]` when none is configured. */
+function operatorContextLines(operatorContext: string | undefined): string[] {
+  const trimmed = operatorContext?.trim();
+  if (trimmed === undefined || trimmed.length === 0) return [];
+  return [
+    "",
+    "---",
+    "Operator context (standing instructions from this deployment's context file):",
+    trimmed,
+  ];
 }
 
 /**
@@ -55,6 +72,7 @@ export function buildBridgeSystemContext(
       WORKSPACE_OPSEC_RULES,
       "",
       "Use natural language for the user-visible portion; put machine-readable tool_calls only on the OPENAI_COMPAT_TOOL_JSON line.",
+      ...operatorContextLines(options.operatorContext),
     ].join("\n");
   }
 
@@ -70,6 +88,7 @@ export function buildBridgeSystemContext(
     "When that section is present, invoke registered client tools ONLY via OPENAI_COMPAT_TOOL_JSON — do not substitute Cursor SDK native tools.",
     "",
     "Follow the end-user instructions for each request. Persist data only where the user (or upstream client) directs you.",
+    ...operatorContextLines(options.operatorContext),
   ];
   return lines.join("\n");
 }
