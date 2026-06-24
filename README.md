@@ -4,15 +4,31 @@
 
 # H31d3nt0r
 
-**h31d3nt0r** — "Heathens' Gate" — is a local gateway for connecting any AI-capable tool or client to modern AI models using your own Cursor subscription. Inspired by the open, inviting notion of a gate for all comers, h31d3nt0r lets any application that speaks the [OpenAI Chat Completions API wire format](https://platform.openai.com/docs/api-reference/chat) (e.g. `/v1/models`, `/v1/chat/completions`) access the power of models you run via Cursor.
+**A local, OpenAI-compatible gateway that brings your Cursor subscription to any AI client.**
 
-Its `/v1/*` routes are fully OpenAI-compatible at the protocol level, acting as a drop-in endpoint for any tool — from terminals to IDEs to creative automation — that can send standard OpenAI JSON with Bearer authentication. While it comes wired for [`@cursor/sdk`](https://cursor.com/docs/sdk/typescript), the architecture is purposefully stack-agnostic: the only requirement is a valid Cursor subscription powering the backend. The result: a universal "heathens' gate" that enables cursor subscription for any OpenAI-compatible client, via your own compute and your own API key.
+H31d3nt0r ("Heathens' Gate") is a self-hosted gateway that exposes your Cursor-powered models through the [OpenAI Chat Completions API](https://platform.openai.com/docs/api-reference/chat). Any tool that speaks the OpenAI wire format — terminals, IDEs, agents, or creative automation — can connect to it as a drop-in endpoint, using your own subscription and your own compute.
 
-This gateway was built for and tested on Hermes Agent. But can easily be modified to fit your needs.
+## Why H31d3nt0r
 
-Bindings default to **127.0.0.1** only.
+- **Universal compatibility** — Implements OpenAI-compatible `/v1/*` routes (`/v1/models`, `/v1/chat/completions`) at the protocol level. If a client can send standard OpenAI JSON with Bearer auth, it works.
+- **Your subscription, your control** — Routes requests through your existing Cursor subscription. No new model accounts, no extra billing surface.
+- **Stack-agnostic by design** — Ships wired for [`@cursor/sdk`](https://cursor.com/docs/sdk/typescript), but the backend is intentionally swappable. The only hard requirement is a valid Cursor subscription.
+- **Local-first and private** — Binds to `127.0.0.1` by default. Nothing is exposed beyond your machine unless you choose to.
 
-**Platform:** H31d3nt0r runs on **macOS and Linux**. `start.sh` drives `start`/`stop`/`status` on both; autoboot is provided per-OS — **launchd** (`launchd/com.h31d3nt0r.plist`, installed via `./start.sh install-autoboot`) on macOS and **systemd** (`systemd/h31d3nt0r.service`) on Linux. Node ≥ 20 is the only hard runtime requirement.
+## Compatibility
+
+Validated against **Hermes Agent**, and adaptable to any OpenAI-compatible client with minimal configuration.
+
+## Platform Support
+
+| Capability | macOS | Linux |
+|---|---|---|
+| Lifecycle (`start` / `stop` / `status`) | `start.sh` | `start.sh` |
+| Autoboot | launchd (`launchd/com.h31d3nt0r.plist`) | systemd (`systemd/h31d3nt0r.service`) |
+
+Install autoboot with `./start.sh install-autoboot`.
+
+**Requirements:** Node.js ≥ 20.
 
 ## Layout
 
