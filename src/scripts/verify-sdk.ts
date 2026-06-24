@@ -10,8 +10,8 @@
 
 import { Agent, CursorAgentError } from "@cursor/sdk";
 import { existsSync, mkdirSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 
 const apiKey = process.env.CURSOR_API_KEY;
 if (!apiKey) {
@@ -23,10 +23,8 @@ if (!apiKey) {
   process.exit(1);
 }
 
-const here = path.dirname(fileURLToPath(import.meta.url));
-const serviceRoot = path.resolve(here, "..", "..");
 const workspaceCwd =
-  process.env.WORKSPACE_CWD ?? path.join(serviceRoot, "agent-workspace");
+  process.env.WORKSPACE_CWD ?? path.join(os.tmpdir(), "h31d3nt0r-verify-sdk");
 
 if (!existsSync(workspaceCwd)) {
   mkdirSync(workspaceCwd, { recursive: true });

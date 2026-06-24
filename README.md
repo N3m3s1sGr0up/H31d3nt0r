@@ -12,7 +12,7 @@ This gateway was built for and tested on Hermes Agent. But can easily be modifie
 
 Bindings default to **127.0.0.1** only.
 
-**Platform:** H31d3nt0r was built on and for **macOS** — launchd autoboot, `start.sh`, and operator docs assume a Mac-first workflow. Linux (systemd) paths are included for portability but are secondary and less tested.
+**Platform:** H31d3nt0r runs on **macOS and Linux**. `start.sh` drives `start`/`stop`/`status` on both; autoboot is provided per-OS — **launchd** (`launchd/com.h31d3nt0r.plist`, installed via `./start.sh install-autoboot`) on macOS and **systemd** (`systemd/h31d3nt0r.service`) on Linux. Node ≥ 20 is the only hard runtime requirement.
 
 ## Layout
 
@@ -21,8 +21,9 @@ H31d3nt0r/                         # clone root (= npm package root)
 ├── package.json
 ├── tsconfig.json / tsconfig.build.json
 ├── .env.local.example         → copy → .env.local (chmod 600)
-├── agent-workspace/           sample cwd for npm run verify-sdk
-├── systemd/h31d3nt0r.service      templated systemd unit
+├── start.sh                   start/stop/status + per-OS autoboot install
+├── launchd/com.h31d3nt0r.plist    templated macOS launchd agent
+├── systemd/h31d3nt0r.service      templated Linux systemd unit
 ├── docs/
 │   ├── operator-setup.md      install + systemd + curl
 │   └── reference/openai-extensions.md   OPENAI_COMPAT_TOOL_JSON + upstream proxy notes

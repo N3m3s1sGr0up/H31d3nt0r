@@ -21,9 +21,9 @@ WorkingDirectory=__INSTALL_ROOT__
 EnvironmentFile=__INSTALL_ROOT__/.env.local
 Environment=NODE_ENV=production
 
-# UMask 0077 so any file the SDK writes (artifacts under agent-workspace/,
-# tmpfiles, crash logs) is created mode 0600 and inaccessible to other
-# users on the host. Defense-in-depth against future SDK behavior changes.
+# UMask 0077 so any file the SDK writes (workspace artifacts, tmpfiles,
+# crash logs) is created mode 0600 and inaccessible to other users on the
+# host. Defense-in-depth against future SDK behavior changes.
 UMask=0077
 
 # Production ExecStart runs system Node (not the Cursor-bundled one).
