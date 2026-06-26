@@ -1,33 +1,42 @@
-name: Titus Secrets Scan (Callable)
-# Reusable workflow that runs Titus (praetorian-inc/titus) against the caller's
-# repository to detect leaked secrets, credentials, and API keys. Language
-# agnostic — works on Go, TypeScript, Python, YAML, or any repo.
+name: Argus Secrets Scan (Callable)
+# Reusable workflow that runs Argus (N3m3s1sGr0up/Argus — the org's internal,
+# upstream-tracked fork of Praetorian Titus) against the caller's repository to
+# detect leaked secrets, credentials, and API keys. Language agnostic — works on
+# Go, TypeScript, Python, YAML, or any repo.
 #
 # Access: invocable from any repo in the N3m3s1sGr0up org
 # (Settings -> Actions -> General -> Access -> Accessible from repositories in
 # the 'N3m3s1sGr0up' organization).
 #
-# See templates/callers/titus.yml for the thin caller. Grant all four
+# PRIVATE TOOL: Argus is a private module, so `go install` needs read access to
+# the Argus repo. This workflow authenticates with a READ-ONLY deploy key bound
+# to N3m3s1sGr0up/Argus (not a user PAT, not org-wide), loaded into a private
+# ssh-agent. The caller passes it as `secrets: { argus-deploy-key: <PEM> }` (org
+# Actions secret ARGUS_DEPLOY_KEY). GitHub's SSH host keys are pinned from the
+# TLS-authenticated api.github.com/meta endpoint (no TOFU). The key is never
+# echoed and the agent is killed at the end of the step.
+#
+# See templates/callers/argus.yml for the thin caller. Grant all three
 # permissions (contents:read, security-events:write, actions:read) in the caller
-# regardless of repo visibility — the titus job statically declares them, so a
+# regardless of repo visibility — the argus job statically declares them, so a
 # missing scope re-triggers a logless startup_failure even when SARIF upload is
 # skipped at runtime on a private repo.
 
 on:
   workflow_call:
     inputs:
-      titus-version:
-        description: "Pinned Titus version. Never use 'latest'."
+      argus-ref:
+        description: "Pinned Argus git ref (full commit SHA). Never use 'main'/'latest'."
         required: false
         type: string
-        default: "v1.1.27"
+        default: "5d1c01d5985cea12528453bdb092382a56cdcebf"
       scan-target:
         description: "Target to scan (default: current directory)."
         required: false
         type: string
         default: "."
       scan-args:
-        description: "Additional arguments passed to 'titus scan'."
+        description: "Additional arguments passed to 'argus scan'."
         required: false
         type: string
         default: "--format sarif --output :memory:"
@@ -47,7 +56,7 @@ on:
         type: boolean
         default: false
       fail-on-findings:
-        description: "Fail the job if Titus finds secrets. Default true (fail-closed)."
+        description: "Fail the job if Argus finds secrets. Default true (fail-closed)."
         required: false
         type: boolean
         default: true
@@ -66,6 +75,10 @@ on:
         required: false
         type: string
         default: ""
+    secrets:
+      argus-deploy-key:
+        description: "Read-only SSH deploy key (private PEM) bound to N3m3s1sGr0up/Argus, used only to `go install` the private Argus module."
+        required: true
 
 permissions:
   contents: read
@@ -144,14 +157,14 @@ jobs:
           SKIP_RE='\.(md|markdown|rst|txt|png|jpg|jpeg|svg|gif|webp|ico)$|^LICENSE$|^docs/'
           if printf '%s\n' "$FILES" | grep -vE "$SKIP_RE" | grep -q .; then
             echo "should_scan=true" >> "$GITHUB_OUTPUT"
-            echo "Scannable changes detected — Titus will run."
+            echo "Scannable changes detected — Argus will run."
           else
             echo "should_scan=false" >> "$GITHUB_OUTPUT"
             echo "Docs/images-only PR — secrets scan skipped (check still passes)."
           fi
 
-  titus:
-    name: Titus Secrets Scan
+  argus:
+    name: Argus Secrets Scan
     needs: preflight
     if: needs.preflight.outputs.should_scan == 'true'
     runs-on: ubuntu-24.04
@@ -181,12 +194,32 @@ jobs:
           go-version: "stable"
           cache: false
 
-      - name: Install Titus
+      - name: Install Argus
         env:
-          TITUS_VERSION: ${{ inputs.titus-version }}
-        run: go install "github.com/praetorian-inc/titus/cmd/titus@$TITUS_VERSION"
+          ARGUS_REF: ${{ inputs.argus-ref }}
+          ARGUS_DEPLOY_KEY: ${{ secrets.argus-deploy-key }}
+        run: |
+          set -eu
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          # Pin GitHub's CURRENT SSH host keys from the TLS-authenticated meta
+          # API — no TOFU, no ssh-keyscan, no stale hardcoded fingerprints.
+          curl -fsS https://api.github.com/meta \
+            | python3 -c "import sys,json; [print('github.com', k) for k in json.load(sys.stdin)['ssh_keys']]" \
+            > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+          # Load the read-only Argus deploy key into an ephemeral agent.
+          eval "$(ssh-agent -s)"
+          printf '%s\n' "$ARGUS_DEPLOY_KEY" | ssh-add - >/dev/null 2>&1
+          # Fetch the private module over SSH; GOPRIVATE keeps it off the proxy.
+          git config --global url."git@github.com:N3m3s1sGr0up/".insteadOf "https://github.com/N3m3s1sGr0up/"
+          export GOPRIVATE="github.com/N3m3s1sGr0up/*"
+          export GOFLAGS="-mod=mod"
+          go install "github.com/N3m3s1sGr0up/Argus/cmd/argus@${ARGUS_REF}"
+          # Tear down auth so it cannot leak into later steps.
+          git config --global --unset-all url."git@github.com:N3m3s1sGr0up/".insteadOf || true
+          ssh-agent -k >/dev/null 2>&1 || true
 
-      - name: Run Titus scan
+      - name: Run Argus scan
         shell: bash
         env:
           SCAN_TARGET: ${{ inputs.scan-target }}
@@ -201,20 +234,20 @@ jobs:
             GIT_FLAG="--git"
           fi
 
-          titus scan $SCAN_TARGET $SCAN_ARGS $GIT_FLAG > titus-results.sarif 2> titus-stderr.log
+          argus scan $SCAN_TARGET $SCAN_ARGS $GIT_FLAG > argus-results.sarif 2> argus-stderr.log
           EXIT=$?
 
-          echo "Titus exit code: $EXIT"
+          echo "Argus exit code: $EXIT"
           # Do NOT echo stderr verbatim — it can contain matched secret material.
           # Surface only that there was diagnostic output; rotate on any finding.
-          if [ -s titus-stderr.log ]; then
-            echo "::warning::Titus produced diagnostic output (suppressed to avoid leaking matched material). Treat any finding as an incident and rotate the credential."
+          if [ -s argus-stderr.log ]; then
+            echo "::warning::Argus produced diagnostic output (suppressed to avoid leaking matched material). Treat any finding as an incident and rotate the credential."
           fi
 
           # Validate SARIF; write empty SARIF if malformed so upload succeeds.
-          if [ ! -s titus-results.sarif ] || ! python3 -c "import json,sys; json.load(open('titus-results.sarif'))" 2>/dev/null; then
-            echo "::warning::Titus did not produce valid SARIF (exit=$EXIT). Writing empty SARIF."
-            cat > titus-results.sarif <<'SARIF_EOF'
+          if [ ! -s argus-results.sarif ] || ! python3 -c "import json,sys; json.load(open('argus-results.sarif'))" 2>/dev/null; then
+            echo "::warning::Argus did not produce valid SARIF (exit=$EXIT). Writing empty SARIF."
+            cat > argus-results.sarif <<'SARIF_EOF'
           {
             "version": "2.1.0",
             "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
@@ -224,7 +257,7 @@ jobs:
           fi
 
           if [ "$FAIL_ON_FINDINGS" = "true" ] && [ $EXIT -ne 0 ]; then
-            echo "::error::Titus found secrets (exit=$EXIT) and fail-on-findings is enabled."
+            echo "::error::Argus found secrets (exit=$EXIT) and fail-on-findings is enabled."
             exit $EXIT
           fi
 
@@ -235,9 +268,9 @@ jobs:
         run: |
           echo "::notice::SARIF upload skipped — repository visibility is '$VIS' (not public). The scan ran and fail-on-findings gating is unaffected."
 
-      - name: Upload Titus SARIF
+      - name: Upload Argus SARIF
         if: ${{ always() && inputs.upload-sarif && (needs.preflight.outputs.visibility == 'public' || inputs.force-upload-private) }}
         uses: github/codeql-action/upload-sarif@7fc6561ed893d15cec696e062df840b21db27eb0 # v4.35.2
         with:
-          sarif_file: titus-results.sarif
-          category: titus-secrets
+          sarif_file: argus-results.sarif
+          category: argus-secrets
