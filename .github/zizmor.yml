@@ -1,0 +1,9 @@
+# Copy to a consumer repo as .github/zizmor.yml.
+# Enforces full-commit-SHA pinning for every `uses:` across the repo's workflows.
+# Tag/branch refs (e.g. @v4, @main) are reported and fail the zizmor check.
+rules:
+  unpinned-uses:
+    config:
+      policies:
+        # Require a hash (full SHA) pin for all Actions, including first-party.
+        "*": hash-pin

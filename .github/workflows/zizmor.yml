@@ -1,0 +1,12 @@
+name: Zizmor
+on:
+  pull_request: { branches: [main] }
+  push: { branches: [main] }
+  workflow_dispatch: {}
+permissions:
+  contents: read
+jobs:
+  zizmor:
+    uses: ./.github/workflows/_zizmor-reusable.yml
+    permissions:
+      contents: read

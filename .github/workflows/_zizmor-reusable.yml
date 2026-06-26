@@ -1,0 +1,85 @@
+name: Zizmor Workflow Audit (Callable)
+# Reusable workflow that runs zizmor (zizmorcore/zizmor) over the caller's
+# GitHub Actions workflows: enforces SHA-pinned Actions (unpinned-uses) and
+# audits for common workflow-security issues. Fail-closed on findings at or
+# above `min-severity` (zizmor exits non-zero -> the required check goes red).
+#
+# Findings surface as inline GitHub annotations (advanced-security is disabled so
+# private repos without GHAS don't 403 on SARIF upload). Access: invocable from
+# any repo in the N3m3s1sGr0up org. See templates/callers/zizmor.yml for the thin
+# caller and templates/zizmor.base.yml for the consumer-side .github/zizmor.yml.
+
+on:
+  workflow_call:
+    inputs:
+      zizmor-version:
+        description: "Pinned zizmor CLI version. Never 'latest'."
+        required: false
+        type: string
+        default: "1.26.1"
+      min-severity:
+        description: "Minimum severity that fails the run: low, medium, high."
+        required: false
+        type: string
+        default: "low"
+      persona:
+        description: "Audit persona: regular, pedantic, or auditor."
+        required: false
+        type: string
+        default: "regular"
+      enable-harden-runner:
+        description: "Whether to install StepSecurity Harden-Runner."
+        required: false
+        type: boolean
+        default: true
+      harden-runner-policy:
+        description: "Harden-Runner egress policy: 'audit' or 'block'."
+        required: false
+        type: string
+        default: "audit"
+
+permissions:
+  contents: read
+
+jobs:
+  zizmor:
+    name: Zizmor Workflow Audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Harden Runner
+        if: ${{ inputs.enable-harden-runner }}
+        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        with:
+          egress-policy: ${{ inputs.harden-runner-policy }}
+          # Only disable sudo here, NOT containers: the zizmor audit runs via a
+          # Docker action (zizmorcore/zizmor-action). disable-sudo-and-containers
+          # removes Docker and breaks the audit on PUBLIC repos (where Harden-Runner
+          # fully enforces). disable-sudo keeps the hardening without killing Docker.
+          disable-sudo: true
+
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Run zizmor
+        uses: zizmorcore/zizmor-action@192e21d79ab29983730a13d1382995c2307fbcaa # v0.5.7
+        with:
+          inputs: .
+          version: ${{ inputs.zizmor-version }}
+          persona: ${{ inputs.persona }}
+          min-severity: ${{ inputs.min-severity }}
+          # Disable ONLINE audits (impostor-commit, ref-confusion): they call the
+          # GitHub API to resolve pinned SHAs and ERROR (not just warn) on
+          # cross-repo pins to a PRIVATE hub, which would fail the check on a
+          # tooling error rather than a real finding. The static unpinned-uses
+          # audit (our actual gate) runs offline and is unaffected.
+          online-audits: false
+          # No GHAS on a private fleet: surface findings as inline annotations
+          # instead of SARIF upload. zizmor still exits non-zero on findings, so
+          # the required check still fails closed.
+          advanced-security: false
+          annotations: true
