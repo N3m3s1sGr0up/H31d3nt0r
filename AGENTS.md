@@ -60,3 +60,63 @@ This repo is the **gateway**, not an engagement workspace. Pentest/red-team outp
 
 - `CONCEPTS.md` (repo root) — shared domain vocabulary (H31d3nt0r, Cursor SDK local runtime, upstream proxy). Relevant when orienting to the codebase or discussing domain concepts.
 - `docs/solutions/` — documented solutions to past problems (bugs, best practices), organized by category with YAML frontmatter (`module`, `tags`, `problem_type`). Relevant when implementing or debugging in documented areas.
+
+---
+
+> The block between `<!-- SOP:BEGIN -->` and `<!-- SOP:END -->` is **managed
+<!-- SOP:BEGIN -->
+<!-- Managed by N3m3s1sGr0up/org-workflows. Do not edit by hand. -->
+
+## N3m3s1sGr0up Standard Operating Procedures
+
+These rules apply to every repository in the organization and to every human and
+AI agent contributing to it.
+
+### Secret handling
+
+- **Never commit secrets.** No credentials, tokens, API keys, private keys, or
+  connection strings in source, history, logs, or fixtures.
+- Secrets live **only** in untracked `.env` files (locally) or GitHub
+  repository/Environment **secrets** (in CI). They are never echoed into logs.
+- The **titus** secrets scan gates every repo and is **fail-closed** — a finding
+  fails the build and cannot be omitted. Any titus hit is an incident: **rotate
+  the affected credential immediately**, regardless of log visibility.
+- **Backstop:** no client data, PII, or real-target data belongs in any repo,
+  **ever**. Engagement work does not live in git.
+
+### Commits & pull requests
+
+- **Conventional Commits** (`feat:`, `fix:`, `chore:`, `docs:`, `refactor:`,
+  `test:`, `ci:`, …) with a clear, value-first subject.
+- **No tool-attribution footers.** Do not add `Co-authored-by:` for tools or
+  `Generated with …` lines. Do not add `Signed-off-by:` unless DCO is explicitly
+  required.
+- **Integration flow is `dev` → `main`.** Feature branches merge to `dev`; `main`
+  is protected and reached only by reviewed PRs.
+- **Every change reaches `main` through a pull request** — direct pushes to
+  `main` are blocked for everyone, including the owner. PR descriptions follow
+  the org PR template.
+
+### Commit signing
+
+- **All commits must be signature-verified.** Humans sign with **SSH signing**
+  (setup in the `org-workflows` README); automation commits route through the
+  verified `n3m3sis-ci` GitHub App identity. Unsigned commits are rejected on
+  `main`.
+
+### Supply chain & workflows
+
+- **All Actions are pinned by full commit SHA** with an honest `# vX.Y.Z`
+  comment. Tag/branch refs are forbidden and flagged by zizmor.
+- CI capability comes from the **`org-workflows` hub** via thin, SHA-pinned
+  caller workflows. Do not fork hub logic into a repo; change it in the hub.
+- **Harden-Runner** runs as the first step of every CI job (audit mode default).
+- **Dependabot** keeps Action and package pins fresh; hub pin bumps are reviewed,
+  never auto-merged.
+
+### Tests
+
+- Tests run in CI when present and a failure **blocks the merge**. No tests are
+  *required* where none exist, and no coverage-gap analysis is performed.
+
+<!-- SOP:END -->
