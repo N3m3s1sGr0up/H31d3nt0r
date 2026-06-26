@@ -1,0 +1,13 @@
+name: Zizmor
+on:
+  pull_request: { branches: [main] }
+  push: { branches: [main] }
+  workflow_dispatch: {}
+permissions:
+  contents: read
+jobs:
+  zizmor:
+    uses: N3m3s1sGr0up/org-workflows/.github/workflows/zizmor.yml@57bb1576e9c6c807feaa398bd60aeb27fa9a81ed # v0.1.0
+    permissions:
+      contents: read
+    secrets: inherit
