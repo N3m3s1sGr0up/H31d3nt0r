@@ -25,6 +25,8 @@ const KEYS_TO_RESET = [
   "BRIDGE_ALLOW_REMOTE_BIND",
   "BRIDGE_READY_RATE_LIMIT_PER_MIN",
   "BRIDGE_CHAT_UPSTREAM_HOST_ALLOWLIST",
+  "BRIDGE_CONTEXT_FILE",
+  "BRIDGE_CONTEXT_MAX_BYTES",
 ];
 
 describe("loadConfig", () => {
@@ -245,5 +247,45 @@ describe("loadConfig", () => {
     process.env.BRIDGE_READY_RATE_LIMIT_PER_MIN = "12";
     const cfg = loadConfig({ dotEnvPath: path.join(tmp, "noop") });
     expect(cfg.readyRateLimitPerMin).toBe(12);
+  });
+
+  it("leaves contextFilePath undefined and applies the default cap when unset", () => {
+    process.env.CURSOR_API_KEY = "cursor-secret";
+    process.env.BRIDGE_API_KEY = "bridge-secret";
+    const cfg = loadConfig({ dotEnvPath: path.join(tmp, "noop") });
+    expect(cfg.contextFilePath).toBeUndefined();
+    expect(cfg.contextFileMaxBytes).toBe(16384);
+  });
+
+  it("keeps an absolute BRIDGE_CONTEXT_FILE path as-is", () => {
+    process.env.CURSOR_API_KEY = "cursor-secret";
+    process.env.BRIDGE_API_KEY = "bridge-secret";
+    process.env.BRIDGE_CONTEXT_FILE = "/abs/context.md";
+    const cfg = loadConfig({ dotEnvPath: path.join(tmp, "noop") });
+    expect(cfg.contextFilePath).toBe("/abs/context.md");
+  });
+
+  it("resolves a relative BRIDGE_CONTEXT_FILE against SERVICE_ROOT", () => {
+    process.env.CURSOR_API_KEY = "cursor-secret";
+    process.env.BRIDGE_API_KEY = "bridge-secret";
+    process.env.BRIDGE_CONTEXT_FILE = "context.md";
+    const cfg = loadConfig({ dotEnvPath: path.join(tmp, "noop") });
+    expect(cfg.contextFilePath).toBe(path.resolve(SERVICE_ROOT, "context.md"));
+  });
+
+  it("treats a whitespace-only BRIDGE_CONTEXT_FILE as unset", () => {
+    process.env.CURSOR_API_KEY = "cursor-secret";
+    process.env.BRIDGE_API_KEY = "bridge-secret";
+    process.env.BRIDGE_CONTEXT_FILE = "   ";
+    const cfg = loadConfig({ dotEnvPath: path.join(tmp, "noop") });
+    expect(cfg.contextFilePath).toBeUndefined();
+  });
+
+  it("parses BRIDGE_CONTEXT_MAX_BYTES", () => {
+    process.env.CURSOR_API_KEY = "cursor-secret";
+    process.env.BRIDGE_API_KEY = "bridge-secret";
+    process.env.BRIDGE_CONTEXT_MAX_BYTES = "2048";
+    const cfg = loadConfig({ dotEnvPath: path.join(tmp, "noop") });
+    expect(cfg.contextFileMaxBytes).toBe(2048);
   });
 });

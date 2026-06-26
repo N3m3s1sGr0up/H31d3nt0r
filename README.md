@@ -24,9 +24,12 @@ Validated against **Hermes Agent**, and adaptable to any OpenAI-compatible clien
 | Capability | macOS | Linux |
 |---|---|---|
 | Lifecycle (`start` / `stop` / `status`) | `start.sh` | `start.sh` |
-| Autoboot | launchd (`launchd/com.h31d3nt0r.plist`) | systemd (`systemd/h31d3nt0r.service`) |
+| Autoboot | launchd (`launchd/com.h31d3nt0r.plist`) | systemd user service (`systemd/h31d3nt0r.user.service`) |
 
-Install autoboot with `./start.sh install-autoboot`.
+Install autoboot with `./start.sh install-autoboot` (macOS → launchd; Linux →
+systemd **user** service + linger, no `sudo`). A system-wide unit
+(`systemd/h31d3nt0r.service`) is available for hardened/multi-operator hosts —
+see `docs/operator-setup.md` §5.
 
 **Requirements:** Node.js ≥ 20.
 
@@ -39,7 +42,8 @@ H31d3nt0r/                         # clone root (= npm package root)
 ├── .env.local.example         → copy → .env.local (chmod 600)
 ├── start.sh                   start/stop/status + per-OS autoboot install
 ├── launchd/com.h31d3nt0r.plist    templated macOS launchd agent
-├── systemd/h31d3nt0r.service      templated Linux systemd unit
+├── systemd/h31d3nt0r.user.service templated Linux systemd user unit (install-autoboot)
+├── systemd/h31d3nt0r.service      templated Linux systemd system unit (advanced)
 ├── docs/
 │   ├── operator-setup.md      install + systemd + curl
 │   └── reference/openai-extensions.md   OPENAI_COMPAT_TOOL_JSON + upstream proxy notes
@@ -61,7 +65,7 @@ H31d3nt0r/                         # clone root (= npm package root)
 |-------|------|-------|
 | `GET /health` | none | `ok`, `service` (`h31d3nt0r`), `version`, `changelog`, uptime. |
 | `GET /ready` | none | Readiness probe; honors `BRIDGE_CURSOR_READY_MS`. |
-| `GET /v1/capabilities` | Bearer | Bridge metadata, workspaces, timeouts, upstream mode |
+| `GET /v1/capabilities` | Bearer | Bridge metadata, workspaces, timeouts, upstream mode, plus `agent_capabilities` (native tooling, client tool bridge, operator-context status) |
 | `GET /v1/models` | Bearer | Backed by `Cursor.models.list()`. Optional `MODEL_CONTEXT_LENGTHS` enrichment. |
 | `GET /v1/models/:id` | Bearer | Same pool; accepts optional `cursor/` prefix. |
 | `POST /v1/chat/completions` | Bearer | Stream + JSON responses; SSE heartbeats `: bridge-heartbeat …` when configured. Terminal `[DONE]`; fatal SSE chunk `{ "object":"bridge.error", … }`. |
@@ -85,6 +89,7 @@ Highlights:
 | `CURSOR_LOCAL_SETTING_SOURCES` | Comma-separated Cursor setting layers (default parses to `project,user` when unset in env file — see `.env.local.example`). |
 | `MODEL_CONTEXT_LENGTHS` | `id:tokens,id2:tokens` table for `/v1/models` `context_length`. |
 | `BRIDGE_CHAT_UPSTREAM_*` | Optional HTTPS OpenAI-compat forwarder (`off`/`tools`/`always`). |
+| `BRIDGE_CONTEXT_FILE` | Optional `context.md` injected into every run's system preamble (mtime-hot-reloaded, capped by `BRIDGE_CONTEXT_MAX_BYTES`, default 16 KiB). |
 
 ## Quickstart
 

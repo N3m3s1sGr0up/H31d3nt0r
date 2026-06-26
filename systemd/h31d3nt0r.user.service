@@ -1,0 +1,57 @@
+[Unit]
+Description=H31d3nt0r — Loopback OpenAI-compatible gateway (@cursor/sdk), user service
+# Installed/managed by `./start.sh install-autoboot` on Linux.
+# Placeholders are rendered at install time:
+#   __INSTALL_ROOT__ → absolute clone path (no trailing slash)
+#   __NODE__         → absolute node binary (from `command -v node`)
+Documentation=file:__INSTALL_ROOT__/README.md
+Documentation=file:__INSTALL_ROOT__/docs/operator-setup.md
+
+[Service]
+Type=simple
+WorkingDirectory=__INSTALL_ROOT__
+
+# .env.local holds CURSOR_API_KEY + BRIDGE_API_KEY and MUST be chmod 600.
+# systemd does not enforce permissions on EnvironmentFile, so start.sh
+# refuses to run unless the file is 600/400 — re-check after any rotation.
+EnvironmentFile=__INSTALL_ROOT__/.env.local
+Environment=NODE_ENV=production
+
+# UMask 0077 so any file the SDK writes (workspace artifacts, tmpfiles,
+# crash logs) is created mode 0600 and inaccessible to other users.
+UMask=0077
+
+# Absolute node path is rendered at install time so the unit does not depend
+# on the user manager's PATH (nvm/nodesource installs live outside /usr/bin).
+ExecStart=__NODE__ __INSTALL_ROOT__/dist/index.js
+
+KillSignal=SIGTERM
+# Process drains in-flight requests then exits; the app has a 30s internal
+# hard ceiling. Give systemd a 5s buffer on top.
+TimeoutStopSec=35
+Restart=on-failure
+RestartSec=5
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=h31d3nt0r
+
+# Conservative hardening for a user service. %h (home) stays writable so the
+# Cursor SDK can persist local-runtime state (~/.cursor, project caches) and
+# engagement artifacts under ~/ops/<engagement>/.
+#
+# NOTE (operator): NoNewPrivileges/RestrictSUIDSGID are intentionally omitted
+# so bridge turns (SDK local runs / tool children) can elevate when needed.
+# Add them before putting this host in a hardened/multi-operator posture.
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=__INSTALL_ROOT__ %h
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictRealtime=true
+LockPersonality=true
+RestrictNamespaces=true
+
+[Install]
+WantedBy=default.target

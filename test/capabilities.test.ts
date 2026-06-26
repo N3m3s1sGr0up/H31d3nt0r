@@ -21,6 +21,7 @@ function fixtureConfig() {
 }
 
 const EXPECTED_TOP_LEVEL_KEYS = [
+  "agent_capabilities",
   "bridge_generation",
   "bridge_generation_notes",
   "bridge_version",
@@ -72,6 +73,63 @@ describe("GET /v1/capabilities", () => {
     expect(res.status).toBe(200);
     const json = (await res.json()) as Record<string, unknown>;
     expect(Object.keys(json).sort()).toEqual([...EXPECTED_TOP_LEVEL_KEYS].sort());
+  });
+
+  it("advertises agent_capabilities for the cursor backend", async () => {
+    const { hono } = buildApp({ config: fixtureConfig() });
+    const res = await hono.request("/v1/capabilities", {
+      headers: { authorization: "Bearer bridge-secret" },
+    });
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as {
+      agent_capabilities: {
+        inference_backend: string;
+        workspace_roots: string[];
+        client_tool_bridge: { protocol: string };
+        operator_context: { configured: boolean; path: string | null };
+      };
+    };
+    const caps = json.agent_capabilities;
+    expect(caps.inference_backend).toBe("cursor_sdk_local");
+    expect(caps.workspace_roots).toEqual(["/tmp/repo", "/tmp/extra-context"]);
+    expect(caps.client_tool_bridge.protocol).toBe("OPENAI_COMPAT_TOOL_JSON");
+    expect(caps.operator_context.configured).toBe(false);
+    expect(caps.operator_context.path).toBeNull();
+  });
+
+  it("reports operator_context as configured when a context file path is set", async () => {
+    const { hono } = buildApp({
+      config: { ...fixtureConfig(), contextFilePath: "/tmp/context.md" },
+    });
+    const res = await hono.request("/v1/capabilities", {
+      headers: { authorization: "Bearer bridge-secret" },
+    });
+    const json = (await res.json()) as {
+      agent_capabilities: { operator_context: { configured: boolean; path: string | null } };
+    };
+    expect(json.agent_capabilities.operator_context.configured).toBe(true);
+    expect(json.agent_capabilities.operator_context.path).toBe("/tmp/context.md");
+  });
+
+  it("advertises the openai upstream backend in agent_capabilities when always-proxying", async () => {
+    const { hono } = buildApp({
+      config: {
+        ...fixtureConfig(),
+        chatUpstream: {
+          mode: "always",
+          url: "https://api.openai.com/v1/chat/completions",
+          apiKey: "sk-test",
+          timeoutMs: 120_000,
+        },
+      },
+    });
+    const res = await hono.request("/v1/capabilities", {
+      headers: { authorization: "Bearer bridge-secret" },
+    });
+    const json = (await res.json()) as {
+      agent_capabilities: { inference_backend: string };
+    };
+    expect(json.agent_capabilities.inference_backend).toBe("openai_compatible_upstream");
   });
 
   it("reflects non-default host and port in suggested_base_url", async () => {

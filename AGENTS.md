@@ -55,3 +55,8 @@ This repo is the **gateway**, not an engagement workspace. Pentest/red-team outp
 | Unit | `npm test` |
 | Live SDK ping | `npm run verify-sdk` (requires `CURSOR_API_KEY`) |
 | Operational flow | **`docs/operator-setup.md`** |
+
+### Documented knowledge
+
+- `CONCEPTS.md` (repo root) — shared domain vocabulary (H31d3nt0r, Cursor SDK local runtime, upstream proxy). Relevant when orienting to the codebase or discussing domain concepts.
+- `docs/solutions/` — documented solutions to past problems (bugs, best practices), organized by category with YAML frontmatter (`module`, `tags`, `problem_type`). Relevant when implementing or debugging in documented areas.

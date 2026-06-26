@@ -65,6 +65,8 @@ export function buildApp(options: BuildAppOptions): BridgeApp {
       localSettingSources: config.localSettingSources,
       sandboxEnabled: config.sandboxEnabled,
       agentMcpServers: config.agentMcpServers,
+      contextFilePath: config.contextFilePath,
+      contextFileMaxBytes: config.contextFileMaxBytes,
     });
   const startedAt = options.startedAt ?? Date.now();
   const contextLengths =

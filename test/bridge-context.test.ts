@@ -31,6 +31,29 @@ describe("bridge context", () => {
     expect(ctx).not.toContain("do not claim you lack access unless a tool genuinely fails");
   });
 
+  it("appends operator context section in default mode", () => {
+    const ctx = buildBridgeSystemContext(
+      { repoRoot: "/repo" },
+      { operatorContext: "Prefer ripgrep over grep." },
+    );
+    expect(ctx).toContain("Operator context (standing instructions");
+    expect(ctx).toContain("Prefer ripgrep over grep.");
+  });
+
+  it("appends operator context section in client-tools mode", () => {
+    const ctx = buildBridgeSystemContext(
+      { repoRoot: "/repo" },
+      { clientToolsRegistered: true, operatorContext: "House rule: no force pushes." },
+    );
+    expect(ctx).toContain("Operator context (standing instructions");
+    expect(ctx).toContain("House rule: no force pushes.");
+  });
+
+  it("omits the operator context section when none is provided", () => {
+    const ctx = buildBridgeSystemContext({ repoRoot: "/repo" });
+    expect(ctx).not.toContain("Operator context");
+  });
+
   it("includes secondary workspace line when configured", () => {
     const ctx = buildBridgeSystemContext({
       repoRoot: "/repo",

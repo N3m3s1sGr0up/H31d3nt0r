@@ -39,6 +39,17 @@ export interface Config {
    * via `/v1/context` so clients can detect stale IDs after a restart.
    */
   readonly bridgeGeneration: number;
+  /**
+   * Optional operator-authored context file (a `context.md`) injected into the
+   * system preamble of every Cursor run. Opt-in via `BRIDGE_CONTEXT_FILE`;
+   * relative paths resolve against `SERVICE_ROOT`. `undefined` disables it.
+   */
+  readonly contextFilePath?: string;
+  /**
+   * Byte cap applied when reading `contextFilePath` (`BRIDGE_CONTEXT_MAX_BYTES`,
+   * default 16384) so a large file cannot blow up the prompt.
+   */
+  readonly contextFileMaxBytes: number;
 
   /** `Agent.prompt` non-stream ceiling (ms). Zero disables enforcement. */
   readonly chatCompletionTimeoutMs: number;
@@ -192,6 +203,20 @@ export interface LoadConfigOptions {
   readonly dotEnvPath?: string;
 }
 
+const DEFAULT_CONTEXT_FILE_MAX_BYTES = 16384;
+
+/**
+ * Resolve `BRIDGE_CONTEXT_FILE` to an absolute path. Blank/unset → undefined.
+ * Relative paths resolve against `SERVICE_ROOT`; absolute paths pass through.
+ */
+function parseContextFilePath(raw: string | undefined): string | undefined {
+  const trimmed = raw?.trim();
+  if (trimmed === undefined || trimmed.length === 0) {
+    return undefined;
+  }
+  return path.isAbsolute(trimmed) ? trimmed : path.resolve(SERVICE_ROOT, trimmed);
+}
+
 function parseChatUpstreamMode(raw: string | undefined): ChatUpstreamMode {
   if (!raw?.trim()) {
     return "off";
@@ -333,6 +358,12 @@ export function loadConfig(options: LoadConfigOptions = {}): Config {
     agentMcpServers: parseAgentMcpServers(process.env.CURSOR_AGENT_MCP_SERVERS),
     maxAgents: parseMaxAgents(process.env.MAX_AGENTS ?? "4"),
     bridgeGeneration: Date.now(),
+    contextFilePath: parseContextFilePath(process.env.BRIDGE_CONTEXT_FILE),
+    contextFileMaxBytes: parseNonNegativeInt(
+      "BRIDGE_CONTEXT_MAX_BYTES",
+      process.env.BRIDGE_CONTEXT_MAX_BYTES,
+      DEFAULT_CONTEXT_FILE_MAX_BYTES,
+    ),
     chatCompletionTimeoutMs: parseNonNegativeMillis(
       "BRIDGE_CHAT_COMPLETION_MS",
       process.env.BRIDGE_CHAT_COMPLETION_MS,

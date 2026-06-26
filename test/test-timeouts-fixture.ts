@@ -18,6 +18,7 @@ export const ROUTE_TIMEOUT_DEFAULTS = {
   chatUpstream: ROUTE_CHAT_UPSTREAM_OFF,
   debugRequests: false,
   readyRateLimitPerMin: 0,
+  contextFileMaxBytes: 16384,
 } satisfies Pick<
   Config,
   | "chatCompletionTimeoutMs"
@@ -27,4 +28,5 @@ export const ROUTE_TIMEOUT_DEFAULTS = {
   | "chatUpstream"
   | "debugRequests"
   | "readyRateLimitPerMin"
+  | "contextFileMaxBytes"
 >;
