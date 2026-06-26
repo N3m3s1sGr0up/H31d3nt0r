@@ -54,7 +54,11 @@ jobs:
         uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
         with:
           egress-policy: ${{ inputs.harden-runner-policy }}
-          disable-sudo-and-containers: true
+          # Only disable sudo here, NOT containers: the zizmor audit runs via a
+          # Docker action (zizmorcore/zizmor-action). disable-sudo-and-containers
+          # removes Docker and breaks the audit on PUBLIC repos (where Harden-Runner
+          # fully enforces). disable-sudo keeps the hardening without killing Docker.
+          disable-sudo: true
 
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
