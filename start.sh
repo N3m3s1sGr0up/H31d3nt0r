@@ -43,6 +43,13 @@ HOST="$(read_env_kv HOST "127.0.0.1")"
 PORT="$(read_env_kv PORT "8787")"
 BASE_URL="http://${HOST}:${PORT}"
 
+OS="$(uname -s)"
+
+SYSTEMD_USER_UNIT="h31d3nt0r.service"
+SYSTEMD_USER_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
+SYSTEMD_USER_DST="${SYSTEMD_USER_DIR}/${SYSTEMD_USER_UNIT}"
+SYSTEMD_USER_SRC="$ROOT/systemd/h31d3nt0r.user.service"
+
 listener_pid() {
   lsof -nP -iTCP:"${PORT}" -sTCP:LISTEN -t 2>/dev/null | head -n 1 || true
 }
@@ -52,6 +59,30 @@ is_h31d3nt0r_pid() {
   local cmd
   cmd="$(ps -p "$pid" -o command= 2>/dev/null || true)"
   [[ "$cmd" == *"dist/index.js"* ]]
+}
+
+systemd_user_available() {
+  [[ "$OS" == "Linux" ]] && command -v systemctl >/dev/null 2>&1
+}
+
+systemd_unit_installed() {
+  [[ -f "$SYSTEMD_USER_DST" ]]
+}
+
+systemd_unit_active() {
+  systemctl --user is-active --quiet "$SYSTEMD_USER_UNIT" 2>/dev/null
+}
+
+# Poll /health until ready (node binds ~1-2s after exec). Returns 0 once up.
+wait_for_health() {
+  local tries="${1:-20}"
+  for _ in $(seq 1 "$tries"); do
+    if curl -sf "${BASE_URL}/health" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 0.25
+  done
+  return 1
 }
 
 LAUNCHD_LABEL="com.h31d3nt0r"
@@ -64,11 +95,7 @@ launchd_loaded() {
   launchctl print "$LAUNCHD_TARGET" &>/dev/null
 }
 
-cmd_install_autoboot() {
-  if [[ "$(uname -s)" != "Darwin" ]]; then
-    echo "start.sh: install-autoboot is macOS only — use systemd on Linux (docs/operator-setup.md §5)" >&2
-    exit 1
-  fi
+cmd_install_autoboot_macos() {
   if [[ ! -f "$LAUNCHD_PLIST_SRC" ]]; then
     echo "start.sh: missing $LAUNCHD_PLIST_SRC" >&2
     exit 1
@@ -103,11 +130,61 @@ cmd_install_autoboot() {
   cmd_status || true
 }
 
-cmd_uninstall_autoboot() {
-  if [[ "$(uname -s)" != "Darwin" ]]; then
-    echo "start.sh: uninstall-autoboot is macOS only" >&2
+cmd_install_autoboot_linux() {
+  if ! command -v systemctl >/dev/null 2>&1; then
+    echo "start.sh: systemctl not found — this host does not use systemd" >&2
     exit 1
   fi
+  if [[ ! -f "$SYSTEMD_USER_SRC" ]]; then
+    echo "start.sh: missing $SYSTEMD_USER_SRC" >&2
+    exit 1
+  fi
+  local node_bin
+  node_bin="$(command -v node)"
+  if [[ -z "$node_bin" ]]; then
+    echo "start.sh: node not found on PATH" >&2
+    exit 1
+  fi
+  mkdir -p "$ROOT/logs" "$SYSTEMD_USER_DIR"
+  sed \
+    -e "s|__INSTALL_ROOT__|${ROOT}|g" \
+    -e "s|__NODE__|${node_bin}|g" \
+    "$SYSTEMD_USER_SRC" >"$SYSTEMD_USER_DST"
+  # Free the port if a manual instance is holding it before systemd takes over.
+  local pid
+  pid="$(listener_pid)"
+  if [[ -n "$pid" ]] && is_h31d3nt0r_pid "$pid"; then
+    echo "h31d3nt0r: stopping manual instance (pid ${pid}) before systemd takeover"
+    kill -TERM "$pid" 2>/dev/null || true
+    sleep 1
+  fi
+  systemctl --user daemon-reload
+  systemctl --user enable --now "$SYSTEMD_USER_UNIT"
+  # Linger keeps the user manager (and this service) running without an active
+  # login session — required to survive logout and to start at boot.
+  if command -v loginctl >/dev/null 2>&1; then
+    loginctl enable-linger "$(id -un)" 2>/dev/null || \
+      echo "start.sh: could not enable linger — run: sudo loginctl enable-linger $(id -un)" >&2
+  fi
+  wait_for_health || true
+  echo "h31d3nt0r: autoboot installed — starts at boot via systemd user service"
+  echo "  Unit:  $SYSTEMD_USER_DST"
+  echo "  Logs:  journalctl --user -u $SYSTEMD_USER_UNIT -f"
+  cmd_status || true
+}
+
+cmd_install_autoboot() {
+  case "$OS" in
+    Darwin) cmd_install_autoboot_macos ;;
+    Linux) cmd_install_autoboot_linux ;;
+    *)
+      echo "start.sh: install-autoboot not supported on $OS" >&2
+      exit 1
+      ;;
+  esac
+}
+
+cmd_uninstall_autoboot_macos() {
   if launchd_loaded; then
     launchctl bootout "$LAUNCHD_DOMAIN" "$LAUNCHD_PLIST_DST" 2>/dev/null || \
       launchctl bootout "$LAUNCHD_TARGET" 2>/dev/null || true
@@ -118,6 +195,31 @@ cmd_uninstall_autoboot() {
   echo "h31d3nt0r: autoboot removed — will not start at login"
 }
 
+cmd_uninstall_autoboot_linux() {
+  if ! command -v systemctl >/dev/null 2>&1; then
+    echo "start.sh: systemctl not found — nothing to remove" >&2
+    exit 1
+  fi
+  if systemd_unit_installed; then
+    systemctl --user disable --now "$SYSTEMD_USER_UNIT" 2>/dev/null || true
+    rm -f "$SYSTEMD_USER_DST"
+    systemctl --user daemon-reload
+  fi
+  echo "h31d3nt0r: autoboot removed — will not start at boot"
+  echo "  Note: user linger is left enabled (disable with: loginctl disable-linger $(id -un))"
+}
+
+cmd_uninstall_autoboot() {
+  case "$OS" in
+    Darwin) cmd_uninstall_autoboot_macos ;;
+    Linux) cmd_uninstall_autoboot_linux ;;
+    *)
+      echo "start.sh: uninstall-autoboot not supported on $OS" >&2
+      exit 1
+      ;;
+  esac
+}
+
 cmd_status() {
   local pid
   pid="$(listener_pid)"
@@ -126,7 +228,13 @@ cmd_status() {
     exit 1
   fi
   echo "h31d3nt0r: listening on ${HOST}:${PORT} (pid ${pid})"
-  if curl -sf "${BASE_URL}/health" | jq . 2>/dev/null; then
+  local health
+  if health="$(curl -sf "${BASE_URL}/health" 2>/dev/null)"; then
+    if command -v jq >/dev/null 2>&1; then
+      printf '%s\n' "$health" | jq .
+    else
+      printf '%s\n' "$health"
+    fi
     return 0
   fi
   echo "start.sh: port ${PORT} is in use but /health did not respond" >&2
@@ -134,6 +242,15 @@ cmd_status() {
 }
 
 cmd_stop() {
+  if systemd_user_available && systemd_unit_active; then
+    echo "h31d3nt0r: stopping systemd user service (stays enabled for next boot)"
+    systemctl --user stop "$SYSTEMD_USER_UNIT" || true
+    sleep 0.5
+    if [[ -z "$(listener_pid)" ]]; then
+      echo "h31d3nt0r: stopped"
+      exit 0
+    fi
+  fi
   if launchd_loaded; then
     echo "h31d3nt0r: stopping launchd job (until next login or ./start.sh start)"
     launchctl bootout "$LAUNCHD_DOMAIN" "$LAUNCHD_PLIST_DST" 2>/dev/null || \
@@ -180,6 +297,13 @@ cmd_start() {
     fi
     echo "start.sh: port ${PORT} is in use but /health failed — check ./start.sh status" >&2
     exit 1
+  fi
+  if systemd_user_available && systemd_unit_installed; then
+    echo "h31d3nt0r: starting via systemd user service (autoboot unit present)"
+    systemctl --user start "$SYSTEMD_USER_UNIT"
+    wait_for_health || true
+    cmd_status
+    exit $?
   fi
   if [[ -f "$LAUNCHD_PLIST_DST" ]] && ! launchd_loaded; then
     echo "h31d3nt0r: starting via launchd (autoboot plist present)"

@@ -81,9 +81,37 @@ Remove autostart:
 - **Start after stop:** `./start.sh start` (re-bootstraps launchd when the plist is installed).
 - **Logs:** `logs/launchd.stdout.log` and `logs/launchd.stderr.log` under the clone root.
 
-### Linux (systemd, optional)
+### Linux (systemd user service — recommended)
 
-From the clone root:
+`./start.sh install-autoboot` renders `systemd/h31d3nt0r.user.service` to
+`~/.config/systemd/user/h31d3nt0r.service`, enables + starts it, and turns on
+**linger** so it runs without an active login session (survives logout and
+reboot). No `sudo` required.
+
+```bash
+npm run build
+./start.sh install-autoboot
+./start.sh status                       # PID + /health
+systemctl --user status h31d3nt0r       # unit state
+journalctl --user -u h31d3nt0r -n 30 -o cat
+```
+
+- **Stop until next boot:** `./start.sh stop` (the unit stays enabled).
+- **Start again:** `./start.sh start` (delegates to `systemctl --user start`).
+- **Remove autoboot:** `./start.sh uninstall-autoboot` (disables + removes the
+  unit; linger is left on — disable with `loginctl disable-linger "$(id -un)"`).
+- **Logs:** `journalctl --user -u h31d3nt0r` (the unit logs to the journal).
+
+After code or dependency updates: `npm run build && systemctl --user restart h31d3nt0r`.
+
+> If `loginctl enable-linger` fails (some hardened/headless setups), run it once
+> with elevation: `sudo loginctl enable-linger "$(id -un)"`.
+
+### Linux (system-wide systemd — advanced, multi-operator/hardened)
+
+For a hardened or shared host, install a root-managed unit from the
+system-wide template instead. This runs as a fixed `User=` regardless of login
+state and is the right choice when several operators share the box:
 
 ```bash
 INSTALL_ROOT="$(pwd)"
@@ -100,6 +128,9 @@ journalctl -u h31d3nt0r -n 30 -o cat
 ```
 
 After code or dependency updates: `npm run build && sudo systemctl restart h31d3nt0r`.
+
+> Use **either** the user service **or** the system-wide unit — not both. Two
+> units bound to the same `PORT` will collide with `EADDRINUSE`.
 
 ## 6. Client integration
 
@@ -123,11 +154,12 @@ After code or dependency updates: `npm run build && sudo systemctl restart h31d3
 | Connection refused / Connection error (OpenAI-compatible client, curl) | Gateway not running | `./start.sh status` then `./start.sh` |
 | 401 Unauthorized on `/v1/*` | Wrong API key | Use `BRIDGE_API_KEY` from `.env.local`, not `CURSOR_API_KEY` or an OpenAI platform key |
 | Client URL errors / 404 on chat | Base URL missing `/v1` | Set base URL to `http://127.0.0.1:8787/v1` (or `suggested_base_url` from `GET /v1/capabilities`) |
-| `EADDRINUSE` / "address already in use" on start | Another process (often h31d3nt0r) already listening on `PORT` | `./start.sh status`; `./start.sh stop`. With autoboot installed (§5), launchd may respawn until `./start.sh stop` (bootout) or `./start.sh uninstall-autoboot` |
+| `EADDRINUSE` / "address already in use" on start | Another process (often h31d3nt0r) already listening on `PORT` | `./start.sh status`; `./start.sh stop`. With autoboot installed (§5), launchd (macOS) or the systemd user service (Linux, `Restart=on-failure`) may respawn until `./start.sh stop` or `./start.sh uninstall-autoboot`. Never run the user service and the system-wide unit together |
 | Invalid model / model not found | Client model ID not in Cursor catalog | `GET /v1/models` for canonical IDs; built-in alias `composer2-5` → `composer-2.5`. Upstream/Cursor errors may also mean account or model access |
 | `GET /ready` returns 503 | Cursor cloud readiness probe failed | Unlike `/health` (liveness only). Check `CURSOR_API_KEY`, network, `BRIDGE_CURSOR_READY_MS`; set `BRIDGE_CURSOR_READY_MS=0` to skip probe if only `/health` is needed |
 | `GET /ready` returns 429 | Ready probe rate limit | Default `BRIDGE_READY_RATE_LIMIT_PER_MIN=30`; raise or set `0` to disable if your orchestrator legitimately polls faster |
 | Client "Connection error" with retries | Client polling before gateway is ready | Run `npm run verify-client` first; confirm autoboot finished (`./start.sh status`); base URL includes `/v1`; client not pointed at wrong `PORT` |
+| `502 agent_startup_failed` / `Cannot find package '@connectrpc/connect-node'` | `@cursor/sdk` imports `@connectrpc/connect-node` but does not declare it as a dependency, so npm never installs it | We pin `@connectrpc/connect-node` directly in `dependencies` (version-matched to `@connectrpc/connect`). If this recurs after an SDK bump, run `npm ls @connectrpc/connect` and `npm install @connectrpc/connect-node@^<that version>`, then `systemctl --user restart h31d3nt0r` (Linux) / `./start.sh stop && ./start.sh` |
 
 **Quick diagnose:** `npm run verify-client` prints checklist hints and fails fast when the port is closed.
 

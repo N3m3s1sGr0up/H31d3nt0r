@@ -24,9 +24,12 @@ Validated against **Hermes Agent**, and adaptable to any OpenAI-compatible clien
 | Capability | macOS | Linux |
 |---|---|---|
 | Lifecycle (`start` / `stop` / `status`) | `start.sh` | `start.sh` |
-| Autoboot | launchd (`launchd/com.h31d3nt0r.plist`) | systemd (`systemd/h31d3nt0r.service`) |
+| Autoboot | launchd (`launchd/com.h31d3nt0r.plist`) | systemd user service (`systemd/h31d3nt0r.user.service`) |
 
-Install autoboot with `./start.sh install-autoboot`.
+Install autoboot with `./start.sh install-autoboot` (macOS → launchd; Linux →
+systemd **user** service + linger, no `sudo`). A system-wide unit
+(`systemd/h31d3nt0r.service`) is available for hardened/multi-operator hosts —
+see `docs/operator-setup.md` §5.
 
 **Requirements:** Node.js ≥ 20.
 
@@ -39,7 +42,8 @@ H31d3nt0r/                         # clone root (= npm package root)
 ├── .env.local.example         → copy → .env.local (chmod 600)
 ├── start.sh                   start/stop/status + per-OS autoboot install
 ├── launchd/com.h31d3nt0r.plist    templated macOS launchd agent
-├── systemd/h31d3nt0r.service      templated Linux systemd unit
+├── systemd/h31d3nt0r.user.service templated Linux systemd user unit (install-autoboot)
+├── systemd/h31d3nt0r.service      templated Linux systemd system unit (advanced)
 ├── docs/
 │   ├── operator-setup.md      install + systemd + curl
 │   └── reference/openai-extensions.md   OPENAI_COMPAT_TOOL_JSON + upstream proxy notes
