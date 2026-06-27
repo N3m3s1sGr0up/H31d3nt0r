@@ -122,6 +122,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           EVENT_NAME: ${{ github.event_name }}
           REPO: ${{ github.repository }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
@@ -131,6 +132,15 @@ jobs:
           if [ "$EVENT_NAME" != "pull_request" ]; then
             echo "should_scan=true" >> "$GITHUB_OUTPUT"
             echo "Non-PR event ($EVENT_NAME) — secrets scan will run."
+            exit 0
+          fi
+
+          # Dependabot PRs change no scannable source (only dependency pins) and
+          # can't read the Argus deploy key anyway; zizmor still enforces hash-pins.
+          # Skip-as-pass so the required check is green without running the scan.
+          if [ "$PR_AUTHOR" = "dependabot[bot]" ]; then
+            echo "should_scan=false" >> "$GITHUB_OUTPUT"
+            echo "Dependabot PR — argus scan skipped (zizmor still enforces hash-pins). Check still passes."
             exit 0
           fi
 
