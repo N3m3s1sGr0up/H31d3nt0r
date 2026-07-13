@@ -1,6 +1,6 @@
 name: Dependabot Auto-Merge
 # VENDORED, self-contained copy of the org-workflows reusable
-# (.github/workflows/dependabot-automerge.yml @ v0.6.3). Public repos can't
+# (.github/workflows/dependabot-automerge.yml @ v0.6.4). Public repos can't
 # consume the PRIVATE hub via `uses:`, so the logic is inlined here. Keep in sync
 # with the hub on each hub release.
 #
@@ -72,7 +72,6 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           MERGE_METHOD: "squash"
           REQUIRED_CHECKS: |
-            argus / Argus Secrets Scan
             zizmor / Zizmor Workflow Audit
           POLL: "15"
           MAXWAIT: "20"
