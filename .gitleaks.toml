@@ -1,0 +1,10 @@
+title = "h31d3nt0r"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Intentional JWT-shaped fixture in redactSecrets unit test (not a live credential)"
+fingerprints = [
+  "cdc0ce5da8b693b09f37f15183cebb80468c47fd:test/errors.test.ts:jwt:29",
+]
