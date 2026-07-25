@@ -1,0 +1,47 @@
+# Trivy OSS: vulnerability + secret scanners only (no license, no misconfig).
+# Phase 1: package-lock.json (resolved npm graph).
+# Phase 2: full checkout (vuln + secret on repo files).
+# Shared knobs: `.github/trivy.yaml`.
+name: Trivy Security Scan
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  trivy:
+    name: Trivy (vuln + secret)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Trivy (package-lock.json — vuln + secret)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          trivy-config: .github/trivy.yaml
+          scan-type: fs
+          scan-ref: ${{ github.workspace }}/package-lock.json
+          scanners: vuln,secret
+          list-all-pkgs: "true"
+          exit-code: "1"
+          hide-progress: "true"
+
+      - name: Trivy (repository — vuln + secret)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          trivy-config: .github/trivy.yaml
+          scan-type: fs
+          scan-ref: ${{ github.workspace }}
+          scanners: vuln,secret
+          list-all-pkgs: "true"
+          exit-code: "1"
+          hide-progress: "true"
+          skip-dirs: .git,node_modules,dist,coverage,.trivy-scan
