@@ -1,0 +1,20 @@
+# Trivy OSS configuration for `.github/workflows/trivy.yml`.
+# Co-located under `.github/` with the workflow. Scanners are set in the workflow (vuln + secret).
+# Docs: https://aquasecurity.github.io/trivy/latest/docs/references/configuration/config-file/
+
+timeout: 30m0s
+
+scan:
+  # Prefer broader detection over fewer false positives (Trivy default is "precise").
+  detection-priority: comprehensive
+
+pkg:
+  # Include dev/test dependency edges where the language supports it.
+  include-dev-deps: true
+
+severity:
+  - UNKNOWN
+  - LOW
+  - MEDIUM
+  - HIGH
+  - CRITICAL
