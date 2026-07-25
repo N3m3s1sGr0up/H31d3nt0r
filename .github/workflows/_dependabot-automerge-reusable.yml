@@ -1,0 +1,179 @@
+name: Dependabot Auto-Merge (Callable)
+# Reusable workflow that merges Dependabot pull requests for low-risk updates
+# (semver patch + minor only) once every required check is green. Major version
+# bumps are left for a human, by design.
+#
+# WHY A DIRECT MERGE, NOT GitHub auto-merge:
+# GitHub's passive auto-merge waits for `reviewDecision == APPROVED`, and ruleset
+# bypass actors do NOT change reviewDecision — a bypass only takes effect on an
+# explicit, direct merge. (Verified in the Mythic-MCP pilot: both GITHUB_TOKEN-
+# and app-token-enabled `--auto` stayed REVIEW_REQUIRED forever.) So this workflow
+# waits for the required checks itself, then performs a DIRECT merge with a
+# short-lived `n3m3s1s-ci` app token. The app is a bypass actor on the consumer
+# human-review gate, so the explicit merge overrides the second-human-approval
+# layer for Dependabot patch/minor only — every non-Dependabot PR still needs the
+# owner's approval. Required checks are still enforced (we only merge once they
+# pass); the hub and org-infra are excluded from the bypass entirely.
+#
+# Access: invocable from any repo in the N3m3s1sGr0up org. See
+# templates/callers/dependabot-automerge.yml for the thin caller.
+
+on:
+  workflow_call:
+    inputs:
+      merge-method:
+        description: "Merge method: merge, squash, or rebase."
+        required: false
+        type: string
+        default: "squash"
+      auto-merge-major:
+        description: "Also merge major version bumps. Off by default."
+        required: false
+        type: boolean
+        default: false
+      required-checks:
+        description: "Newline-separated required check names to wait for before merging."
+        required: false
+        type: string
+        default: |
+          zizmor / Zizmor Workflow Audit
+      poll-interval-seconds:
+        description: "Seconds between check-status polls."
+        required: false
+        type: number
+        default: 30
+      max-wait-minutes:
+        description: "Give up (leave PR open) after this long waiting for checks."
+        required: false
+        type: number
+        default: 5
+      enable-harden-runner:
+        description: "Whether to install StepSecurity Harden-Runner (off by default — automerge only waits/merges)."
+        required: false
+        type: boolean
+        default: false
+      harden-runner-policy:
+        description: "Harden-Runner egress policy: 'audit' or 'block'."
+        required: false
+        type: string
+        default: "audit"
+    secrets:
+      ci-app-id:
+        description: "n3m3s1s-ci GitHub App ID (org secret N3M3S1S_CI_APP_ID)."
+        required: true
+      ci-private-key:
+        description: "n3m3s1s-ci GitHub App private key PEM (org secret N3M3S1S_CI_PRIVATE_KEY)."
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  automerge:
+    name: Dependabot Auto-Merge
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    # Only ever act on real Dependabot PRs.
+    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'dependabot[bot]' }}
+    permissions:
+      contents: read
+      checks: read
+    steps:
+      - name: Harden Runner
+        if: ${{ inputs.enable-harden-runner }}
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: ${{ inputs.harden-runner-policy }}
+          disable-sudo-and-containers: true
+
+      - name: Mint n3m3s1s-ci app token
+        id: token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.ci-app-id }}
+          private-key: ${{ secrets.ci-private-key }}
+          # Scope the minted token to exactly what a direct merge needs.
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Fetch Dependabot metadata
+        id: meta
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
+        with:
+          # Use the app token: the read-only Dependabot GITHUB_TOKEN can't list a
+          # PR's commits (403 Resource not accessible by integration).
+          github-token: ${{ steps.token.outputs.token }}
+
+      - name: Wait for required checks, then merge (patch/minor)
+        if: ${{ steps.meta.outputs.update-type == 'version-update:semver-patch' || steps.meta.outputs.update-type == 'version-update:semver-minor' || (inputs.auto-merge-major && steps.meta.outputs.update-type == 'version-update:semver-major') }}
+        env:
+          # GITHUB_TOKEN reads check status; the app token performs the bypass merge.
+          READ_TOKEN: ${{ github.token }}
+          APP_TOKEN: ${{ steps.token.outputs.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          MERGE_METHOD: ${{ inputs.merge-method }}
+          REQUIRED_CHECKS: ${{ inputs.required-checks }}
+          POLL: ${{ inputs.poll-interval-seconds }}
+          MAXWAIT: ${{ inputs.max-wait-minutes }}
+        run: |
+          set -eu
+
+          # Normalize the required-check list (drop blank lines).
+          REQ=$(printf '%s\n' "$REQUIRED_CHECKS" | sed '/^[[:space:]]*$/d')
+          echo "Required checks to wait for:"; printf '%s\n' "$REQ" | sed 's/^/  - /'
+
+          DEADLINE=$(( $(date +%s) + MAXWAIT * 60 ))
+          while :; do
+            RUNS=$(GH_TOKEN="$READ_TOKEN" gh api --paginate \
+              "repos/$REPO/commits/$HEAD_SHA/check-runs" \
+              --jq '.check_runs[] | [.name, .status, (.conclusion // "")] | @tsv')
+
+            pending=0; failed=0
+            while IFS= read -r req; do
+              [ -n "$req" ] || continue
+              line=$(printf '%s\n' "$RUNS" | awk -F'\t' -v n="$req" '$1==n {print; exit}')
+              if [ -z "$line" ]; then
+                echo "  [pending] $req (no check run yet)"; pending=1; continue
+              fi
+              st=$(printf '%s' "$line" | cut -f2)
+              cc=$(printf '%s' "$line" | cut -f3)
+              if [ "$st" != "completed" ]; then
+                echo "  [pending] $req ($st)"; pending=1
+              elif [ "$cc" = "success" ] || [ "$cc" = "skipped" ] || [ "$cc" = "neutral" ]; then
+                echo "  [ok] $req ($cc)"
+              else
+                echo "  [FAIL] $req ($cc)"; failed=1
+              fi
+            done <<EOF
+          $REQ
+          EOF
+
+            if [ "$failed" = "1" ]; then
+              echo "A required check did not pass — leaving the PR open for a human."
+              exit 0
+            fi
+            if [ "$pending" = "0" ]; then
+              echo "All required checks passed."
+              break
+            fi
+            if [ "$(date +%s)" -ge "$DEADLINE" ]; then
+              echo "Timed out after ${MAXWAIT}m waiting for checks — leaving the PR open."
+              exit 0
+            fi
+            sleep "$POLL"
+          done
+
+          # Direct merge as the n3m3s1s-ci app via the REST merge API. The app is a
+          # bypass actor on the consumer human-review gate, so this explicit merge
+          # overrides the second-human-approval layer; required checks are already
+          # green. We deliberately do NOT use `gh pr merge`: it has a client-side
+          # guard that refuses a REVIEW_REQUIRED PR ("base branch policy prohibits
+          # the merge") before the bypass can apply. The REST endpoint performs the
+          # merge server-side, where the app's bypass takes effect.
+          GH_TOKEN="$APP_TOKEN" gh api --method PUT \
+            "repos/$REPO/pulls/$PR_NUMBER/merge" \
+            -f "merge_method=$MERGE_METHOD"
+          echo "Merged $PR_URL via n3m3s1s-ci (${MERGE_METHOD})."
