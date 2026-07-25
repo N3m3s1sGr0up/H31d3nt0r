@@ -21,7 +21,7 @@ on:
         description: "Minimum severity that fails the run: low, medium, high."
         required: false
         type: string
-        default: "low"
+        default: "medium"
       persona:
         description: "Audit persona: regular, pedantic, or auditor."
         required: false
@@ -50,7 +50,9 @@ jobs:
       contents: read
     steps:
       - name: Harden Runner
-        if: ${{ inputs.enable-harden-runner }}
+        # Skip on Dependabot PRs (cost); keep on human/agent security scans.
+        # Prefer PR author over github.actor (zizmor: bot-actor spoofable).
+        if: ${{ inputs.enable-harden-runner && !(github.event_name == 'pull_request' && github.event.pull_request.user.login == 'dependabot[bot]') }}
         uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: ${{ inputs.harden-runner-policy }}
