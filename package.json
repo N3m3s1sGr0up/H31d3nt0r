@@ -22,13 +22,13 @@
   },
   "dependencies": {
     "@connectrpc/connect-node": "^2.1.2",
-    "@cursor/sdk": "1.0.24",
+    "@cursor/sdk": "1.0.26",
     "@hono/node-server": "^2.0.12",
     "hono": "^4.13.0"
   },
   "devDependencies": {
-    "@types/node": "^26.1.1",
-    "tsx": "^4.23.1",
+    "@types/node": "^26.1.2",
+    "tsx": "^4.23.5",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10"
   },
