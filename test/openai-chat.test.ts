@@ -120,6 +120,16 @@ function makeFakeAgent(): SDKAgent {
     reload: async () => {},
     listArtifacts: async () => [],
     downloadArtifact: async () => Buffer.alloc(0),
+    getUsage: async () => ({
+      usage: {
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        totalTokens: 0,
+      },
+      runs: [],
+    }),
     [Symbol.asyncDispose]: async () => {},
   } as SDKAgent;
 }
