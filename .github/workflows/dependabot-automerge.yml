@@ -13,11 +13,3 @@ jobs:
       enable-harden-runner: false
       max-wait-minutes: 5
       poll-interval-seconds: 30
-      required-checks: |
-        zizmor / Zizmor Workflow Audit
-    permissions:
-      contents: read
-      checks: read
-    secrets:
-      ci-app-id: ${{ secrets.N3M3S1S_CI_APP_ID }}
-      ci-private-key: ${{ secrets.N3M3S1S_CI_PRIVATE_KEY }}
